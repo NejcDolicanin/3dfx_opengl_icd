@@ -188,6 +188,44 @@ void  wglLock(void);                                               /* 6900c940 *
 void  wglUnlock(void);                                             /* 6900c950 */
 LPCRITICAL_SECTION wglNewCritSect(void);                           /* 6900c960 */
 void  __fastcall wglDeleteCritSect(LPCRITICAL_SECTION cs);         /* 6900c990 */
+/* ICD_TRACE builds (nmake EXTRA=/DICD_TRACE): one line per step appended to C:\3DFXOGL.LOG */
+#ifdef ICD_TRACE
+void icdTrace(const char *msg, DWORD value);
+#define ICD_T(msg, v) icdTrace(msg, (DWORD)(v))
+#define ICD_TD(msg)   int icd_trace_ = (icdTrace(msg, 0), 0);    /* a declaration: legal before the other declarations */
+extern LONG g_icdLfbLocks;          /* outstanding grLfbLock()s (lifecycle tracing) */
+#define ICD_LFB(n)    (g_icdLfbLocks += (n))
+#define ICD_LFB_N     g_icdLfbLocks
+#elif defined(ICD_MARK)
+/* ICD_MARK builds (nmake EXTRA=/DICD_MARK): each trace point is three plain stores (file, line, value) into a
+** ring -- no calls, no I/O, no stack -- dumped to C:\3DFXOGL.LOG at process detach (for timing-sensitive bugs) */
+extern volatile DWORD g_icdMarks[1024];
+extern volatile DWORD g_icdMarkN;
+void icdMarkDump(void);
+DWORD icdEsp(void);                 /* naked: the caller's ESP at the call (esp + 4) */
+#define ICD_M_(x)     (g_icdMarks[g_icdMarkN++ % 1024] = (DWORD)(x))
+#define ICD_T(msg, v) (ICD_M_(__FILE__), ICD_M_(__LINE__), ICD_M_(v), ICD_M_(icdEsp()))
+#define ICD_TD(msg)
+/* GL errors (__glSetError): code, frame number and 30 stack dwords per error, first 64 errors */
+extern volatile DWORD g_icdSwapN;
+void __fastcall icdErrMark(DWORD code, const DWORD *sp);
+void __stdcall icdGLHook(DWORD slot, const DWORD *sp);
+void icdHookGlide(HMODULE self);
+int __fastcall icdCount(DWORD id);
+int __stdcall icdProbe(DWORD tag);
+int __stdcall icdProbeV(DWORD tag, DWORD v);
+#define ICD_SWAP(h)   (g_icdSwapN++ < 4 ? (ICD_T("wglSwapBuffers hdc", h), 0) : 0)
+#else
+#define ICD_T(msg, v) ((void)0)
+#define ICD_TD(msg)
+#endif
+#ifndef ICD_LFB
+#define ICD_LFB(n)    ((void)0)
+#define ICD_LFB_N     0
+#endif
+#ifndef ICD_SWAP
+#define ICD_SWAP(h)   ICD_T("wglSwapBuffers hdc", h)
+#endif
 /* list sentinel: a dummy head node whose "next" (+4) is the list (690f62d8 windows) */
 typedef struct { void *prev; void *next; } __WGLlistHead;
 extern __WGLrc s_rcHead;                                            /* 690f6568: the rc sentinel, a whole zeroed __WGLrc */

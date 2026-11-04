@@ -42,5 +42,8 @@ prefix) and `DEVTOOLS` (the `Devtools` folder above).
 
 ```sh
 tools/vc6build.sh clean
-tools/vc6build.sh all          # -> build/out/3dfxogl.dll
+tools/vc6build.sh all                          # -> build/out/3dfxogl.dll
+EXTRA=/DICD_TRACE tools/vc6build.sh all        # trace build: logs each step to C:\3DFXOGL.LOG
 ```
+
+Run `clean` before switching between the normal and the trace build.

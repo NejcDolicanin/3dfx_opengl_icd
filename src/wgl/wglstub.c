@@ -113,7 +113,12 @@ STUB_ATTR PROC WINAPI wglGetProcAddress(LPCSTR a)
 BOOL WINAPI wglMakeCurrent(HDC hdc, HGLRC hrc)
 {
     wglGetCurrentGC();
+#if defined(ICD_TRACE) || defined(ICD_MARK)
+    { BOOL r_ = ((BOOL (WINAPI *)(HDC, HGLRC))g_wglEntryPoints[5])(hdc, hrc); ICD_T("wglMakeCurrent export returns", r_);
+      ICD_T("  entry point", g_wglEntryPoints[5]); return r_; }
+#else
     return ((BOOL (WINAPI *)(HDC, HGLRC))g_wglEntryPoints[5])(hdc, hrc);
+#endif
 }
 
 /* 6900c470 -- wglShareLists: export: jmp [g_wglEntryPoints[6]] (default wglSAShareLists) */

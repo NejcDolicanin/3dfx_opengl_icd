@@ -51,7 +51,8 @@ LIBS    = $(GLIDE)\lib\glide3x.lib $(TLIB)\KERNEL32.LIB $(TLIB)\USER32.LIB $(TLI
 # ---- object list: one entry per source file ----
 WGL_OBJS = $(OUT)\dllmain.obj $(OUT)\drv.obj $(OUT)\wglutil.obj $(OUT)\wglhook.obj $(OUT)\wgldraw.obj \
            $(OUT)\wglddraw.obj $(OUT)\wgldib.obj $(OUT)\wglstand.obj $(OUT)\wglstub.obj $(OUT)\wglfont.obj \
-           $(OUT)\wgldev.obj $(OUT)\wglext.obj $(OUT)\wglext3dfx.obj $(OUT)\wglglide.obj
+           $(OUT)\wgldev.obj $(OUT)\wglext.obj $(OUT)\wglext3dfx.obj $(OUT)\wglglide.obj \
+           $(OUT)\wgldiag.obj
 STUB_OBJS = $(OUT)\glstubs.obj $(OUT)\gdata.obj
 SST_OBJS = $(OUT)\sststate.obj $(OUT)\sstsurf.obj $(OUT)\sst_stencil.obj $(OUT)\sst_ogcall.obj $(OUT)\sst_codebuf.obj \
            $(OUT)\sst_buffers.obj $(OUT)\sst_lostctx.obj $(OUT)\sst_texdl.obj $(OUT)\sst_tmumem.obj $(OUT)\sst_lazyprocs.obj \

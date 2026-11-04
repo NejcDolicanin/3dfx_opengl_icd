@@ -192,6 +192,7 @@ void wglCreateNullContext(void)
 ** wglProcessDetach and fail), create the null context, then bind the stand-alone module if one is loaded */
 BOOL wglProcessAttach(HINSTANCE hinst)
 {
+    ICD_T("wglProcessAttach", hinst);
     g_hInstance = hinst;
     if (!wglGetOSVersion()) return FALSE;
     wglLockCreate();
@@ -206,11 +207,14 @@ BOOL wglProcessAttach(HINSTANCE hinst)
         g_tebOffThread  = g_tlsThread  * 4 + 0xe10;
     }
     wglThreadListInit();
+    ICD_T("wglProcessAttach: device attach", g_isWin9x);
     if (g_device->processAttach != NULL && !g_device->processAttach(GetCurrentThreadId())) {
         wglProcessDetach(hinst);
         return FALSE;
     }
+    ICD_T("wglProcessAttach: null context", 0);
     wglCreateNullContext();
+    ICD_T("wglProcessAttach: bind stand-alone", 0);
     return wglBindStandAlone(hinst) != 0;
 }
 
@@ -222,9 +226,14 @@ BOOL wglProcessDetach(HINSTANCE hinst)
     __WGLthread *t;
 
     (void)hinst;
+    ICD_T("wglProcessDetach glide owner gc", g_glideOwnerGC);
+    ICD_T("  owner's Glide open", g_glideOwnerGC != NULL ? g_glideOwnerGC->fx.glideOpen : -1);
+    ICD_T("  LFB locks held", ICD_LFB_N);
     if (!wglUnloadStandAlone()) return FALSE;
     wglReleaseAllRcs();                        /* 69009dd5 */
+    ICD_T("wglProcessDetach: rcs released", 0);
     wglDestroyAllWindows();
+    ICD_T("wglProcessDetach: windows destroyed", 0);
     if (g_device->processDetach != NULL && !g_device->processDetach(GetCurrentThreadId())) return FALSE;
     while ((t = wglThreadListFirst()) != NULL) {
         wglThreadListUnlink(t);
@@ -241,10 +250,18 @@ BOOL wglProcessDetach(HINSTANCE hinst)
 BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved)
 {
     (void)reserved;
+    ICD_T("DllMain reason", reason);
+    if (reason == DLL_PROCESS_ATTACH) ICD_T("3dfxogl.dll 1.0.0.0761 RE-ICD, trace build", 0);
     switch (reason) {
     case DLL_PROCESS_ATTACH:
+#ifdef ICD_MARK
+        { extern LONG WINAPI icdExceptionFilter(EXCEPTION_POINTERS *); SetUnhandledExceptionFilter(icdExceptionFilter); icdHookGlide((HMODULE)hinst); }
+#endif
         return wglProcessAttach(hinst);
     case DLL_PROCESS_DETACH:
+#ifdef ICD_MARK
+        icdMarkDump();
+#endif
         wglDebugPrintf("DllMain( DLL_PROCESS_DETACH), thread %x\n", GetCurrentThreadId() & 0xffff);
         return wglProcessDetach(hinst);
     case DLL_THREAD_ATTACH:

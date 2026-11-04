@@ -611,6 +611,7 @@ GLboolean __fastcall wglDevLoseCurrent(__GLcontext *gc)
 {
     if (gc->renderMode == GL_RENDER && __glCurrentGC()->beginMode != 1 /* __GL_IN_BEGIN */) {
         hwLoseBuffersCurrent(gc);                               /* loseCurrent on each buffer */
+        ICD_T("wglDevLoseCurrent windowed", gc->hwcx.windowed);
         if (gc->hwcx.windowed) winReleaseSurfaceContext(gc);        /* grSurfaceReleaseContextExt */
         else wglGlideClose(gc);                         /* 69015710 */
         gc->beginMode = __glCurrentGC()->beginMode;
@@ -627,6 +628,8 @@ GLubyte __fastcall wglDevNotifyResize(__GLcontext *gc, GLint x, GLint y, GLuint 
     __WGLwindowRect *wr = dp->windowRect;
     GLboolean wasSW = (GLboolean)gc->hwcx.swRendering;
     char r;
+
+    ICD_T("wglDevNotifyResize width", w); ICD_T("  height", h);
 
     if (!dp->regionValid) {
         dp->regionValid = 1;
@@ -694,7 +697,8 @@ GLboolean __fastcall wglDevMakeCurrent(__GLcontext *gc)
     struct { PIXELFORMATDESCRIPTOR pfd; GLint samples; } fmt;   /* the 3dfx table row: the multisample count follows */
 
     __glSetCurrentGC(gc);                                             /* the inline TEB store */
-    if (wglDisplayQuery() != 0) goto fail;                      /* 69014c10: ExtEscape 0x3df7 */
+    ICD_T("wglDevMakeCurrent fullScreen", rc->window->dp.fullScreen);
+    if (wglDisplayQuery() != 0) { ICD_T("wglDevMakeCurrent fail at line", __LINE__); goto fail; }                      /* 69014c10: ExtEscape 0x3df7 */
     if (rc->window->dp.fullScreen) {
         if (wglGlideDescribePixelFormat(rc->hdc, &fmt.pfd, rc->iPixelFormat - 1) != 0)   /* 69014db8 */
             gc->fx.numSamples = fmt.samples;
@@ -702,34 +706,45 @@ GLboolean __fastcall wglDevMakeCurrent(__GLcontext *gc)
             gc->fx.fullscreen = 1;
             gc->hwcx.windowed = 0;
         } else {
-            if ((GLint)(gc->hwcx.glideContext = PrimaryMakeCurrent(gc)) == -1) goto fail;
+            if ((GLint)(gc->hwcx.glideContext = PrimaryMakeCurrent(gc)) == -1) { ICD_T("wglDevMakeCurrent fail at line", __LINE__); goto fail; }
             gc->fx.fullscreen = 0;
             gc->hwcx.windowed = 1;
+            ICD_T("wglDevMakeCurrent windowed Glide surface ctx", gc->hwcx.glideContext);
         }
     } else {
-        if (gc->fx.glideOpen == 1) goto fail;          /* already open fullscreen */
+        if (gc->fx.glideOpen == 1) { ICD_T("wglDevMakeCurrent fail at line", __LINE__); goto fail; }          /* already open fullscreen */
         /* windowed: Glide surface on the primary */
         if ((GLint)(gc->hwcx.glideContext = PrimaryMakeCurrent(gc)) != -1) {    /* "PrimaryMakeCurrent" */
             gc->fx.fullscreen = 0;
             gc->hwcx.windowed = 1;
-        } else goto fail;
+            ICD_T("wglDevMakeCurrent windowed Glide surface ctx", gc->hwcx.glideContext);
+        } else { ICD_T("wglDevMakeCurrent fail at line", __LINE__); goto fail; }
     }
+    ICD_T("wglDevMakeCurrent step", __LINE__);
     wglDevDetectScreenSaver(gc);
     if (!(gc->mcFlags & __GL_INIT_HW)) {                              /* first time: dispatch tables, buffers */
         gc->dispatchState = &gc->currentDispatchState;
         memcpy(&gc->currentDispatchState, &__glSSTImmedState, sizeof(__GLdispatchTable));
+        ICD_T("wglDevMakeCurrent step", __LINE__);
         __glDetectCPU(gc);                                             /* CPU feature detection */
+        ICD_T("wglDevMakeCurrent step", __LINE__);
         og_genContextCode(gc);                                             /* generate the context's code */
+        ICD_T("wglDevMakeCurrent step", __LINE__);
         gc->currentDispatchState.fn[__GL_DISP_TexCoord2f] = (__GLdispatchFn)gc->hwcx.genTexCoord2f;
         gc->currentDispatchState.fn[__GL_DISP_MultiTexCoord2fARB] = (__GLdispatchFn)gc->hwcx.genMultiTexCoord2fARB;
         gc->currentDispatchState.fn[__GL_DISP_Color4f] = (__GLdispatchFn)gc->hwcx.genColor4f;
         memcpy(&gc->listCompState, &__glSSTListCompState, sizeof(__GLdispatchTable));
+        ICD_T("wglDevMakeCurrent step", __LINE__);
         wglDevInitBuffers(gc);
+        ICD_T("wglDevMakeCurrent step", __LINE__);
         hwReadDepthPrecision(gc);                                             /* depth precision settings */
+        ICD_T("wglDevMakeCurrent step", __LINE__);
     }
     if (gc->modes.layerPlane == 0) hwInstallInlineImmProcs(gc);                  /* immediate-mode procs through hwcx.immProcs */
+    ICD_T("wglDevMakeCurrent step", __LINE__);
     ((DevProc)hwMakeBuffersCurrent)(gc);                                      /* make the buffers current; EDX not set */
     if (!(gc->mcFlags & __GL_HW_MODE)) wglDevInstallHWProcs(gc);
+    ICD_T("wglDevMakeCurrent step", __LINE__);
     if (gc->hwcx.swRequested != 0) gc->hwcx.swRendering = 1;
     if (gc->hwcx.swRendering != 0) {
         ((DevProc)wglDevForceSWRendering)(gc);                        /* EDX not set */
@@ -747,9 +762,12 @@ GLboolean __fastcall wglDevMakeCurrent(__GLcontext *gc)
     if (!(gc->mcFlags & (__GL_HW_MODE | __GL_PIXMAP_MODE))) {        /* first make-current: reset to the default state */
         GLint sx, sy, w, h;
 
+    ICD_T("wglDevMakeCurrent step", __LINE__);
         __glSoftResetContext(gc);                                             /* __glSoftResetContext */
+        ICD_T("wglDevMakeCurrent step", __LINE__);
         sstVarray_AllocateVbuf(gc, 0, 3000);                          /* AllocateVbuf */
         hwGrowVertexArrays(gc, 3000);
+        ICD_T("wglDevMakeCurrent step", __LINE__);
         gc->hwcx.alloc_365f8 = ((DevMalloc)GC_imports_malloc(gc))(gc, 0x5dc0);   /* 3000 x 8 bytes */
         if (gc->hwcx.growBufACap < 0x400) {
             gc->hwcx.growBufA = gc->hwcx.growBufA ? ((DevRealloc)GC_imports_realloc(gc))(gc, gc->hwcx.growBufA, 0x1020)
@@ -762,7 +780,9 @@ GLboolean __fastcall wglDevMakeCurrent(__GLcontext *gc)
             gc->hwcx.growBufBCap = 0x400;
         }
         wglDevInitPools(gc);
+        ICD_T("wglDevMakeCurrent step", __LINE__);
         hwPickDrawRoutines(gc);                                             /* direct command-FIFO routines */
+        ICD_T("wglDevMakeCurrent step", __LINE__);
         gc->constants.viewportEpsilon = 0.0625f;
         gc->constants.viewportAlmostHalf = (__GLfloat)(gc->constants.half) - 0.0625;   /* (the cast keeps the original x87 schedule) */
         if (gc->constants.yInverted != 0)
@@ -770,15 +790,18 @@ GLboolean __fastcall wglDevMakeCurrent(__GLcontext *gc)
         gc->state.current.packedColor = 0xffffffff;
         gc->fx.primMode = 0xffffffff;
         hwBuildGetStrings(gc);                                             /* the glGetString strings */
+        ICD_T("wglDevMakeCurrent step", __LINE__);
         /* the spec wants the viewport and scissor set on the first make-current */
         GC_imports_getDrawableSize(gc)(gc, &sx, &sy, (GLuint *)&w, (GLuint *)&h);
         ((DevRect)gc->currentDispatchState.fn[__GL_DISP_Viewport])(0, 0, w, h);
         ((DevRect)gc->currentDispatchState.fn[__GL_DISP_Scissor])(0, 0, w, h);
+        ICD_T("wglDevMakeCurrent step", __LINE__);
     } else {
         (*gc->procs.applyViewport)(gc);
         (*gc->procs.applyScissor)(gc);
     }
     if (!(gc->mcFlags & __GL_INIT_HW)) {
+        ICD_T("wglDevMakeCurrent step", __LINE__);
         GC_imports_wscx(gc)->flags |= 1;
         (*gc->procs.validate)(gc);
         __glContextSetColorScales(gc);                                             /* __glContextSetColorScales */
@@ -790,14 +813,19 @@ GLboolean __fastcall wglDevMakeCurrent(__GLcontext *gc)
         gc->dispatchState = &__glCurrentGC()->currentDispatchState;
     }
     wglGlideSetupBufferModes(gc);                                     /* 69015cd0 */
+    ICD_T("wglDevMakeCurrent step", __LINE__);
     __glCurrentGC()->beginMode = __GL_NEED_VALIDATE;              /* __GL_DELAY_VALIDATE_MASK(gc, __GL_DIRTY_DEPTH) */
     gc->dirtyMask |= __GL_DIRTY_DEPTH;
     hwDirtyAllGrState(gc);                                                 /* every Glide state record dirty */
+    ICD_T("wglDevMakeCurrent step", __LINE__);
     __glUpdateDepthRange(gc);                                                 /* __glUpdateDepthRange */
+    ICD_T("wglDevMakeCurrent step", __LINE__);
     hwReadGuardBandTweaks(gc);                                                 /* guard band / Z-cull settings */
+    ICD_T("wglDevMakeCurrent step", __LINE__);
     hwReadForce16bppTextures(gc);                                                 /* FX_GL_FORCE_16BPP_TEXTURES */
     hwReadPerfSettings(gc);                                                 /* FX_GL_SUPER, pending buffers, HSR */
     hwReadObjectKeyGlow(gc);                                                 /* object key / glow worm */
+    ICD_T("wglDevMakeCurrent step", __LINE__);
     gc->fx.lastHsrMode = -1;
     gc->fx.swapPending = 0;
     gc->fx.flags |= 4;
@@ -805,6 +833,7 @@ GLboolean __fastcall wglDevMakeCurrent(__GLcontext *gc)
     gc->fx.depthClearPending = 1;
     gc->fx.guardBandOk = gc->hwcx.hasTexFmtNapalm;
     gc->mcFlags = (gc->mcFlags & ~__GL_PIXMAP_MODE) | (__GL_INIT_HW | __GL_HW_MODE);
+    ICD_T("wglDevMakeCurrent step", __LINE__);
     return GL_TRUE;
 fail:
     return GL_FALSE;

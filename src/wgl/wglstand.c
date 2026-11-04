@@ -162,7 +162,7 @@ BOOL WINAPI wglSASetPixelFormat(HDC hdc, int iPixelFormat, CONST PIXELFORMATDESC
 ** (notifySwapBuffers) and return the window's swapBuffers proc's result; FALSE otherwise */
 BOOL WINAPI wglSASwapBuffers(HDC hdc)
 {
-    HWND hwnd = WindowFromDC(hdc);
+    HWND hwnd = (ICD_SWAP(hdc), WindowFromDC(hdc));
     __WGLrc *rc;
     if (hwnd != NULL) {
         rc = wglRcFromHwnd(hwnd, NULL);
@@ -277,6 +277,7 @@ HDC WINAPI wglSAGetCurrentDC(void)
 ** installs the null dispatch.  Finally WGL_CHECK_RESIZE on the rc's gc.  All under the wgl lock */
 BOOL WINAPI wglSAMakeCurrent(HDC hdc, HGLRC hrc)
 {
+    ICD_TD("wglSAMakeCurrent hrc")
     __GLcontext *cur = wglGetCurrentGC();
     __WGLrc *rc = wglRcFromHandle((DWORD)hrc);
     __WGLwindow *w;                               /* (only set and used when hrc != NULL) */
@@ -286,21 +287,21 @@ BOOL WINAPI wglSAMakeCurrent(HDC hdc, HGLRC hrc)
     if (hrc != NULL) {
         DWORD type = GetObjectType(hdc);
         HGDIOBJ hbm = NULL;
-        if (rc == NULL) { wglSystemError("wglMakeCurrent", ERROR_INVALID_HANDLE); wglUnlock(); return FALSE; }
+        if (rc == NULL) { wglSystemError("wglMakeCurrent", ERROR_INVALID_HANDLE); wglUnlock(); return (ICD_T("wglSAMakeCurrent FALSE at line", __LINE__), FALSE); }
         switch (type) {
         case OBJ_DC:    hwnd = WindowFromDC(hdc); break;
         case OBJ_MEMDC: hbm = GetCurrentObject(hdc, OBJ_BITMAP); break;
-        default:        wglUnlock(); return FALSE;
+        default:        wglUnlock(); return (ICD_T("wglSAMakeCurrent FALSE at line", __LINE__), FALSE);
         }
-        if (hwnd == NULL && hbm == NULL) { wglSystemError("wglMakeCurrent", ERROR_INVALID_HANDLE); wglUnlock(); return FALSE; }
+        if (hwnd == NULL && hbm == NULL) { wglSystemError("wglMakeCurrent", ERROR_INVALID_HANDLE); wglUnlock(); return (ICD_T("wglSAMakeCurrent FALSE at line", __LINE__), FALSE); }
         if (rc->isCurrent && rc->threadId != GetCurrentThreadId()) {
-            wglSystemError("wglMakeCurrent", ERROR_INVALID_PARAMETER); wglUnlock(); return FALSE;
+            wglSystemError("wglMakeCurrent", ERROR_INVALID_PARAMETER); wglUnlock(); return (ICD_T("wglSAMakeCurrent FALSE at line", __LINE__), FALSE);
         }
         w = wglGetWindow(hdc, hwnd, rc->modes);
-        if (w == NULL) { wglSystemError("wglMakeCurrent", ERROR_INVALID_HANDLE); wglUnlock(); return FALSE; }
+        if (w == NULL) { wglSystemError("wglMakeCurrent", ERROR_INVALID_HANDLE); wglUnlock(); return (ICD_T("wglSAMakeCurrent FALSE at line", __LINE__), FALSE); }
         if (rc->hdc == hdc && rc->gc == cur && w->hwnd == hwnd) { wglUnlock(); return TRUE; }
         if (w->iPixelFormat != rc->iPixelFormat) {
-            wglSystemError("wglMakeCurrent", ERROR_INVALID_PIXEL_FORMAT); wglUnlock(); return FALSE;
+            wglSystemError("wglMakeCurrent", ERROR_INVALID_PIXEL_FORMAT); wglUnlock(); return (ICD_T("wglSAMakeCurrent FALSE at line", __LINE__), FALSE);
         }
         w->dp.refCount++;
     }
@@ -309,7 +310,7 @@ BOOL WINAPI wglSAMakeCurrent(HDC hdc, HGLRC hrc)
         __WGLwindow *curw = currc->window;
         LPCRITICAL_SECTION cs;
         rc->flags &= ~1u;                         /* sic: the new rc, not currc (hrc == 0: the sentinel s_rcHead) */
-        if (!((GLboolean (__fastcall *)(__GLcontext *))GC_exports_loseCurrent(cur))(cur)) { wglUnlock(); return FALSE; }
+        if (!((GLboolean (__fastcall *)(__GLcontext *))GC_exports_loseCurrent(cur))(cur)) { wglUnlock(); return (ICD_T("wglSAMakeCurrent FALSE at line", __LINE__), FALSE); }
         cs = curw->dp.lock;
         if (wglDestroyWindow(curw)) wglDeleteCritSect(cs);
         currc->threadId = (DWORD)-1;
@@ -326,15 +327,18 @@ BOOL WINAPI wglSAMakeCurrent(HDC hdc, HGLRC hrc)
         w->dp.fullScreen = (GLboolean)wglIsFullScreenWindow(w);
         rc->flags &= ~1u;
         wglWindowResized(w);
+        ICD_T("wglSAMakeCurrent hrc", hrc); ICD_T("  window pf", w->iPixelFormat); ICD_T("  rc pf", rc->iPixelFormat); ICD_T("  fullScreen", w->dp.fullScreen);
         if (!GC_exports_makeCurrent(gc)(gc)) {   /* makeCurrent */
+            ICD_T("wglSAMakeCurrent: device makeCurrent FALSE", 0);
             w->dp.refCount--;
             rc->hwnd = NULL;
             rc->window = NULL;
             rc->hdc = NULL;
             wglSetCurrentGC(NULL);
             wglUnlock();
-            return FALSE;
+            return (ICD_T("wglSAMakeCurrent FALSE at line", __LINE__), FALSE);
         }
+        ICD_T("wglSAMakeCurrent: device makeCurrent TRUE", 1);
         wglSetCurrentGC(gc);
         rc->isCurrent = TRUE;
         rc->threadId = GetCurrentThreadId();
@@ -347,6 +351,7 @@ BOOL WINAPI wglSAMakeCurrent(HDC hdc, HGLRC hrc)
     }
     wglUnlock();
     WGL_CHECK_RESIZE(rc->gc);
+    ICD_T("wglSAMakeCurrent returns TRUE", 1);
     return TRUE;
 }
 
@@ -368,10 +373,18 @@ BOOL WINAPI wglSAShareLists(HGLRC a, HGLRC b)
     return TRUE;
 }
 
-/* 6900dc20 -- wglSAGetProcAddress: wglGetProcAddressTable(name) */
+/* 6900dc20 -- wglSAGetProcAddress: wglGetProcAddressTable(name) (the ICD_MARK build also logs the first 8 name
+** bytes and the result) */
 PROC WINAPI wglSAGetProcAddress(LPCSTR name)
 {
+#ifdef ICD_MARK
+    PROC p_ = (PROC)wglGetProcAddressTable(name);
+    ICD_T("wglGetProcAddress name[0..3]", name ? *(const DWORD *)name : 0); ICD_T("  name[4..7]", name ? *(const DWORD *)(name + 4) : 0);
+    ICD_T("  result", p_);
+    return p_;
+#else
     return (PROC)wglGetProcAddressTable(name);
+#endif
 }
 
 /* the "not supported" group: 6900d81d, 6900dc57, 6900dca4, 6900dcf4, 6900dd48, 6900dd95, 6900dde8, 6900de32 */

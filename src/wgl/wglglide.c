@@ -29,8 +29,10 @@ GLint wglDisplayQuery(void)
     GLint in = 0, out = 0;
     if (ExtEscape(hdc, 0x3df7, 4, (LPCSTR)&in, 4, (LPSTR)&out) != 1) {
         ReleaseDC(NULL, hdc);
+        ICD_T("ExtEscape 3df7 (query) failed", 0);
         return 0;
     }
+    ICD_T("ExtEscape 3df7 (query) out", out);
     ReleaseDC(NULL, hdc);
     return out;
 }
@@ -41,6 +43,7 @@ static __inline void wglDisplayNotify(int code)        /* inlined into both call
     GLint in = 0, out = 0;
     ExtEscape(hdc, code, 4, (LPCSTR)&in, 4, (LPSTR)&out);
     ReleaseDC(NULL, hdc);
+    ICD_T("ExtEscape (3df5 open / 3df6 close) code", code); ICD_T("  out", out);
 }
 /* 69014c70 -- wglDisplayNotifyOpen: tell the display driver the Glide window opened (ExtEscape 0x3df5) */
 void wglDisplayNotifyOpen(void)  { wglDisplayNotify(0x3df5); }     /* 69014c70 */
@@ -51,8 +54,17 @@ void wglDisplayNotifyClose(void) { wglDisplayNotify(0x3df6); }     /* 69014cc0 *
 /* the device procs get GetCurrentThreadId() in ECX from their callers; none of them reads it */
 BOOL __fastcall wglGlideProcessAttach(DWORD threadId)                                         /* 69014d10 */
 {
+#ifdef ICD_TRACE
+    ICD_T("wglGlideProcessAttach: grGlideInit", threadId);
+    grGlideInit();
+    ICD_T("wglGlideProcessAttach: grEnable(8)", 0);
+    grEnable(8 /* GR_OPENGL_MODE_EXT (g3ext.h) */);
+    ICD_T("wglGlideProcessAttach: done", 0);
+    return TRUE;
+#else
     (void)threadId;
     return ((GLboolean (__fastcall *)(void))hwGlideInit)() != 0;
+#endif
 }
 /* 69014d20 -- wglGlideProcessDetach: device processDetach: nothing to do; TRUE */
 BOOL __fastcall wglGlideProcessDetach(DWORD threadId) { (void)threadId; return TRUE; }        /* 69014d20 */
@@ -128,20 +140,30 @@ GLint __fastcall wglGlideDescribePixelFormat(HDC hdc, PIXELFORMATDESCRIPTOR *out
 }
 
 /*
-** The ICD's copy of Glide's resolution table, indexed by GrScreenResolution_t.
+** The ICD's copy of Glide's resolution table, indexed by GrScreenResolution_t.  The original has the 24 standard
+** modes (0x00..0x17); the widescreen modes 0x18..0x2c of the widescreen glide3x follow, in the enum order of
+** sst1vid.h (src/sdk/glide3x), so e.g. a 1920x800 window matches GR_RESOLUTION_1920x800 exactly.
 */
 typedef struct { GLint code, width, height; } __WGLresEntry;
-const __WGLresEntry g_resTable[] = {                         /* 690eee88, 24 rows + sentinel */
+const __WGLresEntry g_resTable[] = {                         /* 690eee88 in the original (24 rows + sentinel) */
     { 0, 320, 200 }, { 1, 320, 240 }, { 2, 400, 256 }, { 3, 512, 384 }, { 4, 640, 200 }, { 5, 640, 350 },
     { 6, 640, 400 }, { 7, 640, 480 }, { 8, 800, 600 }, { 9, 960, 720 }, { 10, 856, 480 }, { 11, 512, 256 },
     { 12, 1024, 768 }, { 13, 1280, 1024 }, { 14, 1600, 1200 }, { 15, 400, 300 }, { 16, 1152, 864 },
     { 17, 1280, 960 }, { 18, 1600, 1024 }, { 19, 1792, 1344 }, { 20, 1856, 1392 }, { 21, 1920, 1440 },
     { 22, 2048, 1536 }, { 23, 2048, 2048 },
+    /* widescreen (not in the original) */
+    { 0x18, 1280, 720 }, { 0x19, 1280, 800 }, { 0x1a, 1360, 768 }, { 0x1b, 1440, 900 }, { 0x1c, 1600, 900 },
+    { 0x1d, 1680, 720 }, { 0x1e, 1680, 1050 }, { 0x1f, 1792, 768 }, { 0x20, 1920, 800 }, { 0x21, 1920, 1080 },
+    { 0x22, 1920, 1200 }, { 0x23, 1960, 840 }, { 0x24, 2096, 900 }, { 0x25, 2304, 960 }, { 0x26, 2560, 1080 },
+    { 0x27, 768, 480 }, { 0x28, 960, 600 }, { 0x29, 1064, 600 }, { 0x2a, 1144, 480 }, { 0x2b, 1400, 600 },
+    { 0x2c, 3840, 2160 },
     { 0xff, 0, 0 } };
+#define RES_TABLE_ROWS  (sizeof(g_resTable) / sizeof(g_resTable[0]) - 1)    /* without the sentinel */
 
 /* 69014f2f -- pick the GrScreenResolution_t for the window's client size: exact match
 ** first, else the smallest supported mode that contains the window.  0xff = none.
 ** (Bugdom is forced to 640x480.)  The gc's imports are used for the temp buffer and size.
+** Modes Glide reports past the table's last row are skipped (the original indexes the table unchecked).
 */
 GLint __fastcall wglGlideChooseResolution(__GLcontext *gc)
 {
@@ -169,8 +191,10 @@ GLint __fastcall wglGlideChooseResolution(__GLcontext *gc)
     } else {
         w = 640; h = 480;
     }
+    ICD_T("wglGlideChooseResolution window width", w); ICD_T("  height", h); ICD_T("  glide resolutions", count);
     result = 0xff;
     for (i = 0; i < count; i++) {
+        if ((GLuint)list[i].resolution >= RES_TABLE_ROWS) continue;
         if (w == (GLuint)g_resTable[list[i].resolution].width && h == (GLuint)g_resTable[list[i].resolution].height) {
             result = g_resTable[list[i].resolution].code;
             if (result != 0xff) goto done;
@@ -178,6 +202,7 @@ GLint __fastcall wglGlideChooseResolution(__GLcontext *gc)
         }
     }
     for (i = 0; i < count; i++) {
+        if ((GLuint)list[i].resolution >= RES_TABLE_ROWS) continue;
         if (w <= (GLuint)g_resTable[list[i].resolution].width && h <= (GLuint)g_resTable[list[i].resolution].height) {
             result = g_resTable[list[i].resolution].code;
             break;
@@ -217,6 +242,7 @@ GLint __fastcall wglGlideWinOpen(__GLcontext *gc, GLint resolution)
     } else {
         ctx = grSstWinOpen((FxU32)hwnd, resolution, GR_REFRESH_60Hz, GR_COLORFORMAT_ARGB /*0*/, GR_ORIGIN_UPPER_LEFT /*0*/, 2, 1);
     }
+    ICD_T("wglGlideWinOpen grSstWinOpen ctx (0 = failed)", ctx);
     if (ctx == 0) return -1;
     wglDisplayNotifyOpen();
     return ctx;
@@ -225,6 +251,7 @@ GLint __fastcall wglGlideWinOpen(__GLcontext *gc, GLint resolution)
 /* 690151e0 -- close the Glide screen */
 void __fastcall wglGlideWinClose(__GLcontext *gc)
 {
+    ICD_T("wglGlideWinClose ctx", gc->hwcx.glideContext); ICD_T("  LFB locks held", ICD_LFB_N);
     grSstWinClose(gc->hwcx.glideContext);
     wglDisplayNotifyClose();
 }
@@ -240,6 +267,7 @@ GLboolean __fastcall wglGlideWindowSwap(__WGLwindow *w)
     if (*open != 0) {
         if (grSelectContext(g_glideOwnerGC->hwcx.glideContext) == 0) {
             wglGlideTrace("Lost Glide context");
+            ICD_T("wglGlideWindowSwap: Glide context lost", g_glideOwnerGC->hwcx.glideContext);
             wglGlideWinClose(gc);
             *open = 0;
         }
@@ -281,6 +309,7 @@ GLint __fastcall wglGlideOpen(__GLcontext *gc)
     }
     grSstSelect(0);
     res = wglGlideChooseResolution(gc);
+    ICD_T("wglGlideOpen resolution (0xff = none)", res);
     if (res == 0xff) {
         if (getenv("HAL_CSIM") == NULL) goto fail;
         res = g_defaultResolution;            /* (690eeedc) under HAL_CSIM */
@@ -288,12 +317,14 @@ GLint __fastcall wglGlideOpen(__GLcontext *gc)
     wglUnlock();                              /* the caller holds the lock: open the screen without it */
     if (gc->fx.glideOpen == 0) ctx = wglGlideWinOpen(gc, res);
     else ctx = gc->hwcx.glideContext;
+    ICD_T("wglGlideOpen context (-1 = failed)", ctx);
     if (ctx == -1) {
         wglLock();
         goto fail;
     }
     g_screenWidth  = gc->constants.maxViewportWidth  = g_resTable[res].width;
     g_screenHeight = gc->constants.maxViewportHeight = g_resTable[res].height;
+    ICD_T("wglGlideOpen screen width", g_screenWidth); ICD_T("  screen height", g_screenHeight);
     gc->hwcx.resolution = res;
     g_glideOwnerGC = gc;
     w->swapBuffers = (GLuint (__fastcall *)(__WGLwindow *))wglGlideWindowSwap;   /* returns a GLboolean */
@@ -326,6 +357,7 @@ void __fastcall wglGlideLose(HWND hwnd)
     if (g_glideOwnerGC != NULL && g_glideOwnerGC != g_nullGC) {
         open = &g_glideOwnerGC->fx.glideOpen;
         if (*open != 0 && hwnd == GC_imports_wscx(g_glideOwnerGC)->window->hwnd) {
+            ICD_T("wglGlideLose (WM_ACTIVATE inactive)", hwnd);
             wglGlideWinClose(g_glideOwnerGC);
             *open = 0;
         }
@@ -344,6 +376,7 @@ void __fastcall wglGlideRestore(HWND hwnd)
             __GLtexMgrICD *texMgr;
             GLint ctx;
             wglGlideTrace("Restoring glide\n");
+            ICD_T("wglGlideRestore (WM_ACTIVATE active)", hwnd);
             texMgr = gc->texMgr;
             ctx = fx->hwcx.glideContext = wglGlideWinOpen(gc, fx->hwcx.resolution);   /* the mode it had */
             if (ctx != 0 && ctx != -1) {
@@ -382,8 +415,10 @@ static void __fastcall lfbLock(__WGLbuffer *buf, __WGLdrawable *dp)             
     GrBuffer_t which = (&dp->frontBuffer != buf);          /* front = 0, back = 1 */
     info.size = sizeof(info);
     if (buf->readlock && !grLfbLock(GR_LFB_READ_ONLY, which, GR_LFBWRITEMODE_ANY, GR_ORIGIN_UPPER_LEFT, FXFALSE, &info)) return;
+    ICD_LFB(buf->readlock ? 1 : 0);
     info.size = sizeof(info);
     if (buf->writelock && !grLfbLock(GR_LFB_WRITE_ONLY, which, GR_LFBWRITEMODE_ANY, GR_ORIGIN_UPPER_LEFT, FXFALSE, &info)) return;
+    ICD_LFB(buf->writelock ? 1 : 0);
     buf->base = info.lfbPtr;
     buf->byteWidth = info.strideInBytes;
     buf->outerWidth = info.strideInBytes / buf->elementSize;
@@ -395,6 +430,7 @@ static void __fastcall lfbUnlock(__WGLbuffer *buf, __WGLdrawable *dp)           
     GrBuffer_t which = (&dp->frontBuffer != buf);
     if (buf->readlock) grLfbUnlock(GR_LFB_READ_ONLY, which);
     if (buf->writelock) grLfbUnlock(GR_LFB_WRITE_ONLY, which);
+    ICD_LFB(-((buf->readlock ? 1 : 0) + (buf->writelock ? 1 : 0)));
     buf->base = NULL;
     buf->byteWidth = 0;
 }
@@ -429,6 +465,7 @@ static void __fastcall lfbDepthLock(__WGLbuffer *buf, __WGLdrawable *dp)        
     ((LfbPriv *)buf->private_)->savedBase = buf->base;
     info.size = sizeof(info);
     if (grLfbLock(GR_LFB_READ_ONLY, GR_BUFFER_AUXBUFFER, GR_LFBWRITEMODE_ANY, GR_ORIGIN_UPPER_LEFT, FXFALSE, &info)) {
+        ICD_LFB(1);
         buf->base = info.lfbPtr;
         buf->byteWidth = info.strideInBytes;
         buf->outerWidth = info.strideInBytes / buf->elementSize;
@@ -440,6 +477,7 @@ static void __fastcall lfbDepthUnlock(__WGLbuffer *buf, __WGLdrawable *dp)      
     LfbPriv *pv = (LfbPriv *)buf->private_;
     (void)dp;
     grLfbUnlock(GR_LFB_READ_ONLY, GR_BUFFER_AUXBUFFER);
+    ICD_LFB(-1);
     buf->base = pv->savedBase;
 }
 /* 69015510 -- lfbDepthFree: free the private and buf->base, and clear buf->free */

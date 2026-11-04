@@ -12,18 +12,21 @@ extern GLboolean (__fastcall *gcMakeCurrentProc(__GLcontext *gc))(void);
 /* 6900b940 -- DrvValidateVersion: accept ICD interface versions 0 and 1 only */
 BOOL WINAPI DrvValidateVersion(ULONG version)
 {
+    ICD_TD("DrvValidateVersion")
     return 1 >= version;
 }
 
 /* 6900b870 -- DrvGetProcAddress: the extension entry point of that name (wglGetProcAddressTable) */
 PROC WINAPI DrvGetProcAddress(LPCSTR name)
 {
+    ICD_TD("DrvGetProcAddress")
     return (PROC)wglGetProcAddressTable(name);
 }
 
 /* 6900b9f0 -- fill *ppfd from the device's pixel format table */
 LONG WINAPI DrvDescribePixelFormat(HDC hdc, INT iPixelFormat, UINT nBytes, LPPIXELFORMATDESCRIPTOR ppfd)
 {
+    ICD_TD("DrvDescribePixelFormat")
     PIXELFORMATDESCRIPTOR pfd;
     LONG n;
 
@@ -42,6 +45,7 @@ LONG WINAPI DrvDescribePixelFormat(HDC hdc, INT iPixelFormat, UINT nBytes, LPPIX
 ** PFD_DRAW_TO_BITMAP for a memory DC / PFD_DRAW_TO_WINDOW for a window DC (other DC types fail) */
 BOOL WINAPI DrvSetPixelFormat(HDC hdc, INT iPixelFormat)
 {
+    ICD_TD("DrvSetPixelFormat")
     HWND hwnd;
     __WGLwindow *w;
     PIXELFORMATDESCRIPTOR pfd;
@@ -70,6 +74,7 @@ BOOL WINAPI DrvSetPixelFormat(HDC hdc, INT iPixelFormat)
 /* 6900c360 -- DrvCreateContext: DrvCreateLayerContext(hdc, 0), the main plane */
 HGLRC WINAPI DrvCreateContext(HDC hdc)
 {
+    ICD_TD("DrvCreateContext")
     return DrvCreateLayerContext(hdc, 0);
 }
 
@@ -80,6 +85,7 @@ HGLRC WINAPI DrvCreateContext(HDC hdc)
 ** failure (no pixel format, no memory, gc creation, other DC types; that last path frees the rc but not its gc) */
 HGLRC WINAPI DrvCreateLayerContext(HDC hdc, INT iLayerPlane)
 {
+    ICD_TD("DrvCreateLayerContext")
     INT   iPixelFormat;
     __WGLrc *rc;
 
@@ -165,6 +171,7 @@ HGLRC WINAPI DrvCreateLayerContext(HDC hdc, INT iLayerPlane)
 ** a no-op (TRUE) after process detach */
 BOOL WINAPI DrvDeleteContext(DHGLRC dhrc)
 {
+    ICD_TD("DrvDeleteContext")
     __WGLrc *rc;
     HDC hdc;
     DWORD type;
@@ -201,6 +208,7 @@ BOOL WINAPI DrvDeleteContext(DHGLRC dhrc)
 ** callback in the rc and returns the current gc's dispatch table as opengl32's proc table */
 PGLCLTPROCTABLE WINAPI DrvSetContext(HDC hdc, DHGLRC dhrc, PFN_SETPROCTABLE callback)
 {
+    ICD_TD("DrvSetContext")
     __GLcontext *cur;
     __WGLrc *rc;
     __WGLwindow *w;
@@ -286,6 +294,7 @@ PGLCLTPROCTABLE WINAPI DrvSetContext(HDC hdc, DHGLRC dhrc, PFN_SETPROCTABLE call
 ** current; dhrc is only used for flag 0x10 and hwnd = NULL on its own rc, not the current one (unchecked) */
 BOOL WINAPI DrvReleaseContext(DHGLRC dhrc)
 {
+    ICD_TD("DrvReleaseContext")
     __GLcontext *cur;
     __WGLrc *rc;
 
@@ -317,6 +326,7 @@ BOOL WINAPI DrvReleaseContext(DHGLRC dhrc)
 ** FALSE with a system error for bad handles, a mask with bits 20..31 set, or a destination gc that is current */
 BOOL WINAPI DrvCopyContext(DHGLRC src, DHGLRC dst, UINT mask)
 {
+    ICD_TD("DrvCopyContext")
     __WGLrc *rs, *rd;
     __GLcontext *gsrc, *gdst;
     GCfn_bool_gc_gc_u copy;
@@ -343,6 +353,7 @@ BOOL WINAPI DrvCopyContext(DHGLRC src, DHGLRC dst, UINT mask)
 ** error for bad handles or when the share fails */
 BOOL WINAPI DrvShareLists(DHGLRC a, DHGLRC b)
 {
+    ICD_TD("DrvShareLists")
     __WGLrc *ra, *rb;
 
     ra = wglRcFromHandle(a);
@@ -363,6 +374,7 @@ BOOL WINAPI DrvShareLists(DHGLRC a, DHGLRC b)
 ** exports.notifySwapBuffers and then the window's swapBuffers proc and return its result; FALSE otherwise */
 BOOL WINAPI DrvSwapBuffers(HDC hdc)
 {
+    ICD_TD("DrvSwapBuffers")
     HWND hwnd;
     __WGLrc *rc;
     BOOL r;
@@ -383,6 +395,7 @@ BOOL WINAPI DrvSwapBuffers(HDC hdc)
 /* 6900b5f0 -- DrvSwapLayerBuffers: DrvSwapBuffers(hdc) whatever the planes (the planes test is always true); TRUE */
 BOOL WINAPI DrvSwapLayerBuffers(HDC hdc, UINT planes)
 {
+    ICD_TD("DrvSwapLayerBuffers")
     if ((planes | 1) != 0) DrvSwapBuffers(hdc);   /* sic: always true */
     return TRUE;
 }
@@ -391,6 +404,7 @@ BOOL WINAPI DrvSwapLayerBuffers(HDC hdc, UINT planes)
 ** otherwise ERROR_INVALID_PIXEL_FORMAT and FALSE */
 BOOL WINAPI DrvDescribeLayerPlane(HDC hdc, INT iPixelFormat, INT iLayerPlane, UINT nBytes, LPLAYERPLANEDESCRIPTOR plpd)
 {
+    ICD_TD("DrvDescribeLayerPlane")
     (void)hdc; (void)nBytes; (void)plpd;
     wglGetCurrentGC();
     if (iPixelFormat != 0 && iLayerPlane != 0) return TRUE;   /* stub: never fills plpd */
@@ -402,6 +416,7 @@ BOOL WINAPI DrvDescribeLayerPlane(HDC hdc, INT iPixelFormat, INT iLayerPlane, UI
 ** non-window DC, else TRUE without realizing anything */
 BOOL WINAPI DrvRealizeLayerPalette(HDC hdc, INT iLayerPlane, BOOL bRealize)
 {
+    ICD_TD("DrvRealizeLayerPalette")
     DWORD type = GetObjectType(hdc);
     (void)bRealize;
     wglGetCurrentGC();
@@ -415,6 +430,7 @@ BOOL WINAPI DrvRealizeLayerPalette(HDC hdc, INT iLayerPlane, BOOL bRealize)
 ** non-window DC, else 1 without writing pcr */
 int WINAPI DrvGetLayerPaletteEntries(HDC hdc, INT iLayerPlane, INT iStart, INT cEntries, COLORREF *pcr)
 {
+    ICD_TD("DrvGetLayerPaletteEntries")
     DWORD type = GetObjectType(hdc);
     (void)iStart; (void)cEntries; (void)pcr;
     wglGetCurrentGC();
@@ -428,6 +444,7 @@ int WINAPI DrvGetLayerPaletteEntries(HDC hdc, INT iLayerPlane, INT iStart, INT c
 ** plane (error text "wglDescribeLayerPlane") */
 int WINAPI DrvSetLayerPaletteEntries(HDC hdc, INT iLayerPlane, INT iStart, INT cEntries, CONST COLORREF *pcr)
 {
+    ICD_TD("DrvSetLayerPaletteEntries")
     DWORD type = GetObjectType(hdc);
     (void)iStart; (void)cEntries; (void)pcr;
     wglGetCurrentGC();

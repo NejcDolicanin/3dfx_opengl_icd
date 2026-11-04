@@ -2,7 +2,7 @@
 # Build with the real Visual C++ 6.0 toolchain (Devtools\msvc6_0\VC98) under the system Wine.
 #   tools/vc6build.sh              -> nmake -f makefile.vc6 objs   (compile only)
 #   tools/vc6build.sh all          -> nmake -f makefile.vc6        (compile and link build/out/3dfxogl.dll)
-#   EXTRA=/D... tools/vc6build.sh all                              (extra compiler flags)
+#   EXTRA=/DICD_TRACE tools/vc6build.sh all                        (extra compiler flags: here the trace build)
 #   tools/vc6build.sh clean
 #   tools/vc6build.sh cl <file.c>  -> compile one source file to build\out\ (VC6 syntax check)
 #   tools/vc6build.sh dumpbin ...  -> run DUMPBIN.EXE
