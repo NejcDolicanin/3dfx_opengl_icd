@@ -1,55 +1,39 @@
-# Prerequisites
-*.d
+# 3dfx OpenGL ICD -- what stays out of the repository.
+#
+# Tracked: src/ (including the vendored Glide SDK and its glide3x.lib), build/makefile.vc6, build/3dfxogl.def,
+# build/3dfxogl.rc, tools/, toolchain/*/README.txt, README.md.
 
-# Object files
-*.o
-*.ko
+# ---- private working notes (kept on disk, not in the repository)
+RE-NOTES.md
+
+# ---- build output (tools/vc6build.sh writes everything into build/out)
+build/out/
+build/*.pdb
 *.obj
-*.elf
-
-# Linker output
+*.res
+*.exp
 *.ilk
 *.map
-*.exp
-
-# Precompiled Headers
-*.gch
+*.idb
 *.pch
 
-# Libraries
-*.lib
-*.a
-*.la
-*.lo
+# ---- Microsoft binaries: the VC6 RTM and VC 4.2 compilers and the Win32 import libraries.  Kept on disk for the
+# standalone build, out of the repository because they are not ours to redistribute.  For a private repository that
+# should build from a fresh clone, delete these three lines.
+toolchain/vc6rtm/Bin/
+toolchain/vc42/Bin/
+toolchain/lib/**/*.LIB
 
-# Shared objects (inc. Windows DLLs)
+# ---- reference sources (SGI OpenGL Sample Implementation; ref/3dfx-opengl links outside the project)
+ref/
+
+# ---- DLLs anywhere (the original 3dfxOGL.dll, copies of our builds)
 *.dll
-*.so
-*.so.*
-*.dylib
+*.DLL
 
-# Executables
-*.exe
-*.out
-*.app
-*.i*86
-*.x86_64
-*.hex
-
-# Debug files
-*.dSYM/
-*.su
-*.idb
-*.pdb
-
-# Kernel Module Compile Results
-*.mod*
-*.cmd
-.tmp_versions/
-modules.order
-Module.symvers
-Mkfile.old
-dkms.conf
-
-# debug information files
-*.dwo
+# ---- Python / editor leftovers
+__pycache__/
+*.pyc
+.vscode/
+*.swp
+*~

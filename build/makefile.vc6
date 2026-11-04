@@ -1,0 +1,101 @@
+# nmake -f makefile.vc6        (Visual C++ 6.0, run from an MSVC6 command prompt in the build\ dir)
+#
+# Build configuration reverse-engineered from the original 3dfxOGL.dll 1.0.0.0761:
+#   - MSVC 6.0 linker (6.0), image base 0x69000000, subsystem Windows 4.0, image version 1.100
+#   - entry point IS DllMain (no CRT startup code; CRT comes from MSVCRT.dll imports only)
+#   - dynamic CRT (MSVCRT.dll) -> /MD, and asserts are compiled in (-> no NDEBUG)
+#   - internal functions pass args in ECX/EDX -> /Gr (fastcall default), exports are __stdcall
+#   - section layout .text .data .rsrc .reloc; checksum set -> /RELEASE
+#   - imports: glide3x.dll (static import lib), KERNEL32 USER32 GDI32 ADVAPI32 MSVCRT DDRAW
+#
+# Self-contained: the Glide SDK headers and import library are in src\sdk\glide3x (see its README.txt).
+
+SRC     = ..\src
+GLIDE   = $(SRC)\sdk\glide3x
+OUT     = out
+
+CC      = cl
+LINK    = link
+RC      = rc
+
+# /QI0f (VC6's Pentium 0x0F-erratum workaround): the original was built with it -- it leaves a nop after some
+# movsx (accum_Mult, __glSpanUnpackBitmap, the 16-bit dither / line stores, __glim_TexSubImage2D); found 2026-11-03
+CFLAGS  = /nologo /W3 /D_GDI32_ /Gr /Og /Oi /Ot /Oy /Ob1 /Gs /Zp4 /Gy /QI0f /Fd$(OUT)\3dfxogl.pdb /Fo$(OUT)\ \
+          /D "WIN32" /D "_WINDOWS" /D "__GL_WIN32" /D "FX_GLIDE_H5" \
+          /I "$(SRC)\include" /I "$(GLIDE)\include" /D "__WIN32__" /D "GLIDE_LIB" $(EXTRA)
+
+# Texus2 (texture compression / quantisation library): src/texus2 is 3dfx's mid-2000 SWLIBS/TEXUS2/LIB ("3dx
+# Source"), compiled against that tree's Glide headers (src/sdk/glide3x_texus), as 3dfx's own makefile did.
+# 3dfx built it with Visual C++ 4.2 (CL 10.20.6166; it rebuilds the 1997 Glide 2.4 SDK texus.lib 133 / 134
+# functions identical), and the ICD's VC6 linker took the objects as they were.  So Texus is compiled with
+# toolchain\vc42 and VC 4.2's own headers (/X ignores VC6's INCLUDE; VC42INC comes from tools/vc6build.sh).
+# __cdecl (no /Gr); /ML: CRT calls through the import thunks, as the original's; 3dfx.mak's `-Ox -G5`; no /Fd
+# (VC 4.2 must not touch VC6's pdb).
+# Compiled from inside src\texus2 with the bare file name, as 3dfx's makefile did: __FILE__ in Texus's asserts is then
+# "dequant.c", as in the original, not "..\src\texus2\dequant.c".  The paths below are relative to src\texus2.
+TXCC    = ..\..\toolchain\vc42\Bin\cl.exe
+TXFLAGS = /nologo /W1 /ML /Ox /G5 /Gy /Fo..\..\build\$(OUT)\ /X /I "$(VC42INC)" \
+          /D "WIN32" /D "_WINDOWS" /D "GLIDE3" /D "GLIDE_HARDWARE" /D "HWC_CSIM" \
+          /I "." /I "..\sdk\glide3x_texus\include"
+
+LFLAGS  = /nologo /dll /machine:I386 /base:0x69000000 /entry:"DllMain" /subsystem:windows,4.0 \
+          /version:1.100 /release /nodefaultlib /def:3dfxogl.def /map:$(OUT)\3dfxogl.map \
+          /out:$(OUT)\3dfxogl.dll
+
+# the import libraries the original was linked with (toolchain/lib/README.txt), in the order of its import
+# descriptors: glide3x, KERNEL32, USER32, GDI32, ADVAPI32, MSVCRT, DDRAW
+TLIB    = ..\toolchain\lib
+LIBS    = $(GLIDE)\lib\glide3x.lib $(TLIB)\KERNEL32.LIB $(TLIB)\USER32.LIB $(TLIB)\GDI32.LIB $(TLIB)\ADVAPI32.LIB \
+          $(TLIB)\MSVCRT.LIB $(TLIB)\DDRAW.LIB $(TLIB)\dx60sdk\DXGUID.LIB
+
+# ---- object list: one entry per source file ----
+WGL_OBJS = $(OUT)\dllmain.obj $(OUT)\drv.obj $(OUT)\wglutil.obj $(OUT)\wglhook.obj $(OUT)\wgldraw.obj \
+           $(OUT)\wglddraw.obj $(OUT)\wgldib.obj $(OUT)\wglstand.obj $(OUT)\wglstub.obj $(OUT)\wglfont.obj \
+           $(OUT)\wgldev.obj $(OUT)\wglext.obj $(OUT)\wglext3dfx.obj $(OUT)\wglglide.obj
+STUB_OBJS = $(OUT)\glstubs.obj $(OUT)\gdata.obj
+SST_OBJS = $(OUT)\sststate.obj $(OUT)\sstsurf.obj $(OUT)\sst_stencil.obj $(OUT)\sst_ogcall.obj $(OUT)\sst_codebuf.obj \
+           $(OUT)\sst_buffers.obj $(OUT)\sst_lostctx.obj $(OUT)\sst_texdl.obj $(OUT)\sst_tmumem.obj $(OUT)\sst_lazyprocs.obj \
+           $(OUT)\sst_glideinit.obj $(OUT)\sst_ogvtx.obj $(OUT)\sst_linepoint.obj $(OUT)\sst_multitex.obj $(OUT)\ssthand.obj $(OUT)\sst_enable.obj $(OUT)\sst_lockedtri.obj $(OUT)\sst_tribuild.obj $(OUT)\sst_primgen.obj $(OUT)\sst_offsetgen.obj $(OUT)\sst_texgen.obj $(OUT)\sst_vtxcopy.obj $(OUT)\sst_trigen.obj $(OUT)\sst_colorgen.obj $(OUT)\od_copynormal.obj $(OUT)\od_copycolor.obj $(OUT)\od_vafill.obj $(OUT)\od_clipkey.obj $(OUT)\od_clipinterp.obj $(OUT)\od_whatneeds.obj $(OUT)\od_domatrix.obj $(OUT)\od_makekey.obj $(OUT)\od_copyfog.obj $(OUT)\od_calcsize.obj $(OUT)\od_convload.obj $(OUT)\od_doload.obj $(OUT)\od_copycoord.obj $(OUT)\od_scaleby.obj $(OUT)\sst_combine.obj $(OUT)\sst_attrib.obj $(OUT)\sst_validate.obj $(OUT)\sst_pick.obj $(OUT)\sst_varray.obj $(OUT)\sst_grstate.obj $(OUT)\sst_clip.obj $(OUT)\sst_immed.obj $(OUT)\sst_settings.obj $(OUT)\sst_texmgr.obj $(OUT)\sst_light.obj $(OUT)\sst_rgb.obj $(OUT)\sst_color.obj $(OUT)\sst_tex.obj $(OUT)\sst_depth.obj $(OUT)\sst_render.obj $(OUT)\sst_ctable.obj
+GL_OBJS  = $(OUT)\gl_export.obj $(OUT)\gl_disp.obj $(OUT)\gl_global.obj $(OUT)\gl_pick.obj $(OUT)\gl_xform.obj $(OUT)\gl_pxdrawpick.obj $(OUT)\gl_pxreadpick.obj \
+           $(OUT)\gl_light.obj $(OUT)\gl_begin.obj $(OUT)\gl_stencil.obj $(OUT)\gl_texstate.obj \
+           $(OUT)\gl_texextract.obj $(OUT)\gl_capi.obj $(OUT)\gl_lcomp1.obj $(OUT)\gl_lcomp2.obj $(OUT)\gl_varrayext.obj \
+           $(OUT)\gl_stateapi.obj $(OUT)\gl_polyoffset.obj $(OUT)\gl_get.obj $(OUT)\gl_texcoord.obj $(OUT)\gl_depth.obj \
+           $(OUT)\gl_zfuncs.obj $(OUT)\gl_lexec.obj $(OUT)\og_build.obj \
+           $(OUT)\og_util.obj $(OUT)\glcore_hand.obj $(OUT)\gl_enable.obj $(OUT)\gl_context.obj $(OUT)\gl_accum.obj $(OUT)\gl_pickspan.obj $(OUT)\gl_attrib.obj $(OUT)\gl_dlopt.obj $(OUT)\gl_image.obj $(OUT)\gl_pxpick.obj $(OUT)\gl_lnfast.obj $(OUT)\gl_pxfast.obj $(OUT)\gl_pgclip.obj $(OUT)\gl_lnclip.obj $(OUT)\gl_lndraw.obj $(OUT)\gl_pgaa.obj $(OUT)\gl_pgdraw.obj $(OUT)\gl_lnspan.obj $(OUT)\gl_pgspan.obj $(OUT)\gl_doget.obj $(OUT)\gl_span565.obj $(OUT)\og_encode.obj $(OUT)\og_pool.obj $(OUT)\od_clear16dither.obj $(OUT)\od_clear8dither.obj $(OUT)\glxform_asm.obj $(OUT)\si_px_upack.obj $(OUT)\si_s_lcache.obj $(OUT)\si_dl_mopt.obj $(OUT)\si_s_capi.obj $(OUT)\si_s_names.obj $(OUT)\si_s_lcomp.obj $(OUT)\si_vc_cache.obj $(OUT)\si_s_tex.obj $(OUT)\si_s_prim.obj $(OUT)\si_s_pgmode.obj $(OUT)\si_s_pgfin.obj $(OUT)\si_s_lnfin.obj $(OUT)\si_s_get.obj $(OUT)\si_s_eval.obj $(OUT)\si_px_rend.obj $(OUT)\si_dl_table.obj $(OUT)\si_dl_opt.obj $(OUT)\si_s_varray.obj $(OUT)\si_s_select.obj $(OUT)\si_s_rapi.obj $(OUT)\si_s_napi.obj $(OUT)\si_s_finish.obj $(OUT)\si_px_api.obj $(OUT)\si_s_vertex.obj $(OUT)\si_s_texextr.obj $(OUT)\si_s_store.obj $(OUT)\si_s_span.obj $(OUT)\si_s_rgb.obj $(OUT)\si_s_depth.obj $(OUT)\si_s_ci.obj $(OUT)\si_s_pgspan.obj $(OUT)\si_s_xform.obj $(OUT)\si_s_texel.obj $(OUT)\si_s_size.obj $(OUT)\si_s_rect.obj $(OUT)\si_s_math.obj $(OUT)\si_s_lnspan.obj $(OUT)\si_s_light.obj $(OUT)\si_s_image.obj $(OUT)\si_s_fog.obj $(OUT)\si_s_feed.obj $(OUT)\si_s_blend.obj $(OUT)\si_s_attrib.obj $(OUT)\si_px_mod.obj $(OUT)\si_px_read.obj $(OUT)\si_px_paths.obj $(OUT)\si_px_pack.obj $(OUT)\og_regs.obj $(OUT)\gl_fog.obj $(OUT)\gl_polygon.obj $(OUT)\gl_clip.obj $(OUT)\gl_rasterpos.obj $(OUT)\gl_store.obj $(OUT)\gl_eval.obj $(OUT)\gl_ci.obj $(OUT)\gl_tex.obj $(OUT)\gl_varray.obj $(OUT)\gl_lcomp3.obj $(OUT)\gl_dlist.obj $(OUT)\gl_feedback.obj $(OUT)\gl_rgb.obj $(OUT)\gl_pxpack.obj $(OUT)\gl_pxapi.obj $(OUT)\gl_vertex.obj $(OUT)\gl_buffer.obj $(OUT)\gl_ctable.obj $(OUT)\gl_pxpaths.obj $(OUT)\gl_line.obj $(OUT)\gl_rect.obj $(OUT)\gl_point.obj $(OUT)\gl_memclr.obj $(OUT)\gl_bitmap.obj $(OUT)\gl_finish.obj $(OUT)\gl_size.obj $(OUT)\og_sched.obj $(OUT)\gl_pixfmt.obj $(OUT)\gl_nulldisp.obj
+TEX_OBJS = $(OUT)\codec.obj $(OUT)\eigen.obj $(OUT)\bitcoder.obj $(OUT)\texuslib.obj $(OUT)\clamp.obj \
+           $(OUT)\read.obj $(OUT)\resample.obj $(OUT)\mipmap.obj $(OUT)\quantize.obj $(OUT)\ncc.obj \
+           $(OUT)\nccnnet.obj $(OUT)\pal256.obj $(OUT)\pal6666.obj $(OUT)\dequant.obj $(OUT)\view.obj \
+           $(OUT)\util.obj $(OUT)\diffuse.obj $(OUT)\write.obj $(OUT)\tga.obj $(OUT)\3df.obj \
+           $(OUT)\ppm.obj $(OUT)\rgt.obj $(OUT)\txs.obj
+
+OBJS = $(WGL_OBJS) $(STUB_OBJS) $(SST_OBJS) $(GL_OBJS) $(TEX_OBJS) $(OUT)\3dfxogl.res
+
+all: $(OUT) $(OUT)\3dfxogl.dll
+
+$(OUT):
+	-mkdir $(OUT)
+
+$(OUT)\3dfxogl.dll: $(OBJS) 3dfxogl.def
+	$(LINK) $(LFLAGS) $(OBJS) $(LIBS)
+
+$(OUT)\3dfxogl.res: 3dfxogl.rc
+	$(RC) /fo $@ 3dfxogl.rc
+
+{$(SRC)\wgl}.c{$(OUT)}.obj::
+	$(CC) $(CFLAGS) /c $<
+{$(SRC)\stubs}.c{$(OUT)}.obj::
+	$(CC) $(CFLAGS) /c $<
+{$(SRC)\data}.c{$(OUT)}.obj::
+	$(CC) $(CFLAGS) /c $<
+{$(SRC)\sst}.c{$(OUT)}.obj::
+	$(CC) $(CFLAGS) /c $<
+{$(SRC)\gl}.c{$(OUT)}.obj::
+	$(CC) $(CFLAGS) /c $<
+{$(SRC)\texus2}.c{$(OUT)}.obj:
+	cd $(SRC)\texus2 && $(TXCC) $(TXFLAGS) /c $(<F)
+
+clean:
+	-del /q $(OUT)\*.obj $(OUT)\*.res $(OUT)\*.dll $(OUT)\*.lib $(OUT)\*.exp $(OUT)\*.map $(OUT)\*.pdb
+
+# `nmake -f makefile.vc6 objs` compiles the objects without linking.
+objs: $(OUT) $(WGL_OBJS) $(STUB_OBJS) $(SST_OBJS) $(GL_OBJS) $(TEX_OBJS)

@@ -1,0 +1,33 @@
+// Version resource of the original 3dfxOGL.dll 1.0.0.0761; the version strings say "RE-ICD" (reverse-engineered
+// rebuild) where the original says "ICD".
+#include <windows.h>
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,761
+ PRODUCTVERSION 1,0,0,761
+ FILEFLAGSMASK 0x3fL
+ FILEFLAGS 0x0L
+ FILEOS VOS__WINDOWS32
+ FILETYPE VFT_DLL
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName", "3dfx Interactive, Inc.\0"
+            VALUE "FileDescription", "OpenGL 1.1 Client Driver\0"
+            VALUE "FileVersion", "1.0.0.0761 RE-ICD\0"
+            VALUE "InternalName", "OpenGL\0"
+            VALUE "LegalCopyright", "Copyright \251 1999 3dfx Interactive, Inc.\0"
+            VALUE "LegalTrademarks", "OpenGL \256 is a registered trademark of Silicon Graphics, Inc.\0"
+            VALUE "OriginalFilename", "3dfxogl.dll\0"
+            VALUE "ProductName", "OpenGL 1.1 Client Driver\0"
+            VALUE "ProductVersion", "1.0.0.0761 RE-ICD\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
