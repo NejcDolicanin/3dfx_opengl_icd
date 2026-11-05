@@ -829,6 +829,7 @@ void __fastcall __glSSTInitDepth(__GLdepthBufferICD *fb, __GLcontext *gc);
 /* sst/sst_glideinit.c */
 GLboolean __fastcall hwGlideInit(void);
 GLboolean __fastcall hwHasPixextExt(void);
+const char *__fastcall hwRegOrEnvString(const char *name);
 GLboolean __fastcall hwHasSurfaceExt(void);
 void __fastcall hwUpdateClipRegion(void);
 /* sst/sst_grstate.c */

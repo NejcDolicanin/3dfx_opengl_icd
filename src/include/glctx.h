@@ -1473,7 +1473,7 @@ typedef struct __GLfxCoreICDRec {
     GLint       glowWorm;                   /* 0x35130  FX_GL_GLOW_WORM debug mode: 3 every object, else objectKey
                                                  matches; 4 also dumps c:\\swap%i_%i.txt at swap */
     GLuint      glowColor;                  /* 0x35134  FX_GL_GLOW_COLOR (default -1), read by generated code */
-    GLint       force16bppTextures;         /* 0x35138  FX_GL_FORCE_16BPP_TEXTURES */
+    GLint       force16bppTextures;         /* 0x35138  FX_GL_FORCE_16BPP_TEXTURES: 0 by rendering depth, 1 16 bpp, 2 32 bpp */
     GLuint      unk_3513c;
     GLint       hsrLevel;                   /* 0x35140  FX_GL_HSR '1'..'4' -> 4..1 */
     GLint       hsrEnable;                  /* 0x35144  FX_GL_HSR set: grSetNumPendingBuffers(FX_GL_MIN_VERTEX_STRIDE, default 5) */

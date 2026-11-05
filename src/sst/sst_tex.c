@@ -70,7 +70,10 @@ typedef void (__fastcall *XF4PROC)(__GLcoord *res, __GLcoord *v, __GLmatrixICD *
 /* ---- texture coordinate generation (SI s_tex.c __glCalcMixedTexture, generated in place) -------- */
 #define __glLookUpActiveTexture(gc, target) \
     __glLookUpTexture(gc, target, (gc)->fx.activeTexture)
-#define TEX32(gc)   ((gc)->hwcx.hasTexFmt32 && !(gc)->fx.force16bppTextures)
+/* 32-bit texels: the board has them and 16-bit textures are not forced (FX_GL_FORCE_16BPP_TEXTURES 1); the unsized
+** GL_RGB / GL_RGBA also need 32-bit rendering, unless 32-bit textures are forced (2) */
+#define TEX32(gc)           ((gc)->hwcx.hasTexFmt32 && (gc)->fx.force16bppTextures != 1)
+#define TEX32_UNSIZED(gc)   (TEX32(gc) && ((gc)->hwcx.has32bpp || (gc)->fx.force16bppTextures == 2))
 /* ---- ARB_texture_compression (compressed images are copied as they come) ------------------------- */
 extern float __fastcall sstTex_Clampf(GLuint ecx_unused, GLuint edx_unused, float x, float lo, float hi);
 extern void __stdcall __glsstim_TexParameterfv(GLenum target, GLenum pname, const GLfloat pv[]);
@@ -1239,9 +1242,9 @@ void __stdcall __glsstim_TexParameteriv(GLenum target, GLenum pname, const GLint
 
 /*
 ** 6904d740 -- hwTexelFormat: the texel format of an internal format: the descriptor, and the base format through
-** *baseFormat.  RGB / RGBA (and RGB8.., RGBA8..) get the 32-bit formats when the board has them and
-** FX_GL_FORCE_16BPP_TEXTURES is off, else 565 / 4444; 0 for an unknown format.  RGB8.. / RGBA8.. test
-** only the texture format, not has32bpp.  No labels: the sized groups fall through into the small
+** *baseFormat.  RGB8.. / RGBA8.. get the 32-bit formats when the board has them and 16-bit textures are not forced
+** (TEX32); the unsized RGB / RGBA also need 32-bit rendering or forced 32-bit textures (TEX32_UNSIZED); else
+** 565 / 4444; 0 for an unknown format.  No labels: the sized groups fall through into the small
 ** formats, and VC6's cross-jumping merges the duplicated 565 / 4444 / RGBA8 blocks into the original's
 ** layout (the RGB8 group must come before GL_RGB).
 */
@@ -1263,7 +1266,7 @@ const __GLtextureFormatICD *__fastcall hwTexelFormat(__GLcontext *gc, GLenum int
         return &g_texFmtRGB565;
       case 3:
       case GL_RGB:
-        if (gc->hwcx.has32bpp && TEX32(gc)) {
+        if (TEX32_UNSIZED(gc)) {
             *baseFormat = GL_RGB;
             return &g_texFmtXRGB8888;
         }
@@ -1284,7 +1287,7 @@ const __GLtextureFormatICD *__fastcall hwTexelFormat(__GLcontext *gc, GLenum int
         return &g_texFmtARGB4444;
       case 4:
       case GL_RGBA:
-        if (gc->hwcx.has32bpp && TEX32(gc)) {
+        if (TEX32_UNSIZED(gc)) {
             *baseFormat = GL_RGBA;
             return &g_texFmtARGB8888;
         }

@@ -282,19 +282,15 @@ void __fastcall hwBuildGetStrings(__GLcontext *gc)
     }
 }
 
-/* 6902a7ab -- hwReadForce16bppTextures: force 16 bpp textures from the registry or environment ('0' / '1') */
+/* 6902a7ab -- hwReadForce16bppTextures: FX_GL_FORCE_16BPP_TEXTURES from the registry or environment: '1' forces 16 bpp
+** textures, '2' 32 bpp; '0' or unset: by the rendering depth (hwTexelFormat) */
 void __fastcall hwReadForce16bppTextures(__GLcontext *gc)
 {
   char *s;
 
   s = REG_OR_ENV_STRING("FX_GL_FORCE_16BPP_TEXTURES");
-  if (s != NULL) {
-    if (*s == '0') gc->fx.force16bppTextures = 0;
-    else if (*s == '1') gc->fx.force16bppTextures = 1;
-  }
-  else {
-    gc->fx.force16bppTextures = 0;
-  }
+  if (s != NULL && (*s == '1' || *s == '2')) gc->fx.force16bppTextures = *s - '0';
+  else gc->fx.force16bppTextures = 0;
 }
 
 /* 6902a81e -- hwReadPerfSettings (size 232): FX_GL_SUPER, FX_GL_MIN_VERTEX_STRIDE (pending buffers) and FX_GL_HSR */

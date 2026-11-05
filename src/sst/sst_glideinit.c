@@ -98,6 +98,16 @@ GLboolean __fastcall hwHasPixextExt(void)
     return strstr(grGetString(GR_EXTENSION), " PIXEXT ") != NULL;
 }
 
+/* hwRegOrEnvString: a Glide setting without a gc: the environment variable, else the value in Glide's registry key
+** (grGetRegistryOrEnvironmentStringExt); NULL when unset or when Glide lacks the extension */
+const char *__fastcall hwRegOrEnvString(const char *name)
+{
+    static const char *(__stdcall *getString)(const char *);
+    if (getString == NULL)
+        getString = (const char *(__stdcall *)(const char *))grGetProcAddress("grGetRegistryOrEnvironmentStringExt");
+    return getString != NULL ? getString(name) : NULL;
+}
+
 /* 6904d700 -- __glSSTExtractTexelRGBA8_B: s_texextr.c __glExtractTexelRGBA8_B for the hardware texture images (the
 ** bordered form of 6904d660): the texels are stored B, G, R, A */
 void __fastcall __glSSTExtractTexelRGBA8_B(__GLmipMapLevelICD *level, __GLtextureICD *tex,

@@ -105,7 +105,7 @@ const __WGLpfdRow g_pfdTable32[4] = {
 GLint g_pfdCount16 = 4;                 /* 690eed88 */
 GLint g_pfdCount32 = 4;                 /* 690eee40 */
 /* 69014db8 -- wglGlideDescribePixelFormat: the 16 bpp table, or the 32 bpp one on a 32 bpp desktop when the PIXEXT
-** extension is present; Voodoo4 drops the 4x FSAA row, Banshee / Voodoo3 both FSAA rows.  No formats (0) on a
+** extension is present (FX_GL_FORCE_16BPP_PIX overrides the desktop: '1' 16 bpp, '2' 32 bpp); Voodoo4 drops the 4x FSAA row, Banshee / Voodoo3 both FSAA rows.  No formats (0) on a
 ** Banshee / Voodoo3 with under 16 MB and a desktop above 1024x768, or with the SURFACE extension on a desktop under
 ** 16 bpp.  A valid index copies the whole 44-byte row into out (see the CB above) and returns the count; an
 ** invalid one returns 0, or the count when out is NULL */
@@ -114,7 +114,7 @@ GLint __fastcall wglGlideDescribePixelFormat(HDC hdc, PIXELFORMATDESCRIPTOR *out
     const __WGLpfdRow *table = g_pfdTable16;
     GLint count = g_pfdCount16;
     int bpp;
-    const char *hw;
+    const char *hw, *force;
     RECT desk;
 
     bpp = GetDeviceCaps(hdc, BITSPIXEL);
@@ -129,6 +129,9 @@ GLint __fastcall wglGlideDescribePixelFormat(HDC hdc, PIXELFORMATDESCRIPTOR *out
         }
     }
     if (hwHasSurfaceExt() && bpp < 16) return 0;                  /* SURFACE ext present but 8-bpp desktop */
+    force = hwRegOrEnvString("FX_GL_FORCE_16BPP_PIX");
+    if (force != NULL && *force == '1') bpp = 16;
+    else if (force != NULL && *force == '2') bpp = 32;
     if (bpp == 32 && hwHasPixextExt()) { table = g_pfdTable32; count = g_pfdCount32; }
     if (strstr(hw, "Voodoo4") != NULL) count -= 1;             /* no 4x FSAA on one chip */
     if (strstr(hw, "Voodoo Banshee") != NULL || strstr(hw, "Voodoo3") != NULL) count -= 2;   /* no FSAA */
