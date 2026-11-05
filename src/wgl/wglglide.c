@@ -105,14 +105,17 @@ const __WGLpfdRow g_pfdTable32[4] = {
 GLint g_pfdCount16 = 4;                 /* 690eed88 */
 GLint g_pfdCount32 = 4;                 /* 690eee40 */
 /* 69014db8 -- wglGlideDescribePixelFormat: the 16 bpp table, or the 32 bpp one on a 32 bpp desktop when the PIXEXT
-** extension is present (FX_GL_FORCE_16BPP_PIX overrides the desktop: '1' 16 bpp, '2' 32 bpp); Voodoo4 drops the 4x FSAA row, Banshee / Voodoo3 both FSAA rows.  No formats (0) on a
+** extension is present; Voodoo4 drops the 4x FSAA row, Banshee / Voodoo3 both FSAA rows.  FX_GL_FORCE_16BPP_PIX
+** overrides the desktop: '1' only the 16 bpp formats, '2' the 32 bpp formats first and then the 16 bpp ones (a game
+** that sets a 16 bpp mode itself still finds a format).  No formats (0) on a
 ** Banshee / Voodoo3 with under 16 MB and a desktop above 1024x768, or with the SURFACE extension on a desktop under
 ** 16 bpp.  A valid index copies the whole 44-byte row into out (see the CB above) and returns the count; an
 ** invalid one returns 0, or the count when out is NULL */
 GLint __fastcall wglGlideDescribePixelFormat(HDC hdc, PIXELFORMATDESCRIPTOR *out, int index)
 {
     const __WGLpfdRow *table = g_pfdTable16;
-    GLint count = g_pfdCount16;
+    const __WGLpfdRow *table2 = NULL;           /* force 32: the 16 bpp formats after the 32 bpp ones */
+    GLint count = g_pfdCount16, total;
     int bpp;
     const char *hw, *force;
     RECT desk;
@@ -132,14 +135,22 @@ GLint __fastcall wglGlideDescribePixelFormat(HDC hdc, PIXELFORMATDESCRIPTOR *out
     force = hwRegOrEnvString("FX_GL_FORCE_16BPP_PIX");
     if (force != NULL && *force == '1') bpp = 16;
     else if (force != NULL && *force == '2') bpp = 32;
-    if (bpp == 32 && hwHasPixextExt()) { table = g_pfdTable32; count = g_pfdCount32; }
+    if (bpp == 32 && hwHasPixextExt()) {
+        table = g_pfdTable32; count = g_pfdCount32;
+        if (force != NULL && *force == '2') table2 = g_pfdTable16;   /* both tables have the same row count */
+    }
     if (strstr(hw, "Voodoo4") != NULL) count -= 1;             /* no 4x FSAA on one chip */
     if (strstr(hw, "Voodoo Banshee") != NULL || strstr(hw, "Voodoo3") != NULL) count -= 2;   /* no FSAA */
-    if (index >= 0 && index < count) {
-        if (out != NULL) memcpy(out, &table[index], sizeof(__WGLpfdRow));
-        return count;
+    total = (table2 != NULL) ? 2 * count : count;
+    ICD_T("wglGlideDescribePixelFormat index", index); ICD_T("  display bpp", GetDeviceCaps(hdc, BITSPIXEL));
+    ICD_T("  FX_GL_FORCE_16BPP_PIX (char, 0 = unset)", force != NULL ? *force : 0);
+    ICD_T("  table bpp (32 + 16 = 48)", table == g_pfdTable32 ? (table2 != NULL ? 48 : 32) : 16); ICD_T("  formats", total);
+    if (index >= 0 && index < total) {
+        if (out != NULL)
+            memcpy(out, index < count ? &table[index] : &table2[index - count], sizeof(__WGLpfdRow));
+        return total;
     }
-    return (out != NULL) ? 0 : count;
+    return (out != NULL) ? 0 : total;
 }
 
 /*
