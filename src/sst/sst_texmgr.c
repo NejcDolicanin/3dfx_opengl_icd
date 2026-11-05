@@ -539,7 +539,7 @@ void *__fastcall __glSSTTexCreateLevel(__GLcontext *gc, __GLtextureFxICD *tex, G
 
     r = __glTextureCreateLevel(gc, &tex->t, level, ifmt, w, h, a5, a6, a7);
     if (r != NULL) {
-        if (ifmt == 0x86b0 || ifmt == 0x86b1 || ifmt == 0x83a1) {   /* FXT1 RGB / RGBA, GL_RGB4_S3TC (stored as FXT1 RGB) */
+        if (ifmt == 0x86b0 || ifmt == 0x86b1 || (ifmt >= 0x83a0 && ifmt <= 0x83a3)) {   /* FXT1 RGB / RGBA; the four S3TC formats are stored as FXT1 */
             tex->t.level[level]->compressedSize = txTexCalcMapSize(w, h, 0x11);
             tex->t.level[level]->compressedImage = __GL_MALLOC(gc, tex->t.level[level]->compressedSize);
             if (tex->t.level[level]->compressedImage == NULL)

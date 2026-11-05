@@ -1343,8 +1343,11 @@ const __GLtextureFormatICD *__fastcall hwTexelFormat(__GLcontext *gc, GLenum int
         *baseFormat = GL_INTENSITY;
         return &g_texFmtI8;
       case 0x86b1:                          /* GL_COMPRESSED_RGBA_FXT1_3DFX */
+      case 0x83a2:                          /* GL_RGBA_S3TC, GL_RGBA4_S3TC: stored as FXT1 RGBA */
+      case 0x83a3:
         *baseFormat = GL_RGBA;
         return &g_texFmtFXT1RGBA;
+      case 0x83a0:                          /* GL_RGB_S3TC, GL_RGB4_S3TC: stored as FXT1 RGB */
       case 0x83a1:
       case 0x86b0:                          /* GL_COMPRESSED_RGB_FXT1_3DFX */
         *baseFormat = GL_RGB;

@@ -639,7 +639,8 @@ void __stdcall __glim_GetTexImage(GLenum target, GLint level,
     if (!width || !height) return;
 
     if (lp->requestedFormat != GL_COMPRESSED_RGB_FXT1_3DFX &&
-	lp->requestedFormat != GL_COMPRESSED_RGBA_FXT1_3DFX) {
+	lp->requestedFormat != GL_COMPRESSED_RGBA_FXT1_3DFX &&
+	(lp->requestedFormat < 0x83a0 || lp->requestedFormat > 0x83a3)) {     /* the S3TC formats are stored as FXT1 */
 	__glInitTexDestPack(gc, &spanInfo, width, height, lp->depth - lp->border*2,
 			    format, type, texels);
 	__glInitTexImageGet(gc, &spanInfo, tex, level);
