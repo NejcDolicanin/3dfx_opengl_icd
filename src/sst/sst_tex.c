@@ -787,7 +787,7 @@ void __stdcall __glsstim_TexSubImage2D(GLenum target, GLint level, GLint xoffset
     __GLmipMapLevelICD *lp;
     const __GLtextureFormatICD *li;
     GLubyte *buf;
-    GLint i;
+    GLint i, t0, t1;
 
     __GL_SETUP_NOT_IN_BEGIN();
 
@@ -827,36 +827,35 @@ void __stdcall __glsstim_TexSubImage2D(GLenum target, GLint level, GLint xoffset
         __GL_DELAY_VALIDATE(gc);
         return;
     }
+    lp = tex->t.level[level];
+    li = lp->texFormat;
+    if (lp->compressedImage != NULL) {
+        /* fix: a compressed (FXT1) level was re-encoded whole by copyTexImage: upload all its 4-row blocks from the
+        ** compressed image, as the full download does (the original sent rows of the uncompressed copy as FXT1) */
+        buf = (GLubyte *)lp->compressedImage;
+        t0 = 0;
+        t1 = ((lp->height + 3) & ~3) - 1;
+    } else {
+        buf = (GLubyte *)lp->buffer + __glBytesPerElement(li->pixelType) * lp->width2 * yoffset;
+        t0 = yoffset;
+        t1 = yoffset + height - 1;
+    }
     if (g_tmuSharedMemory) {
         if (tex->onTmu[0]) {
-            /* own variables for the shared-memory branch: with lp / li / buf the original's spill slots
-            ** (dead parameter slots) come out different */
-            __GLmipMapLevelICD *lp0;
-            const __GLtextureFormatICD *li0;
-            GLubyte *buf0;
-
-            lp0 = tex->t.level[level];
-            li0 = (lp0)->texFormat;
-            buf0 = lp0->buffer;
             if (gc->hwcx.windowed) {
                 grSurfaceSetTextureSurfaceExt(gc->fx.tmuTexUnit[gc->fx.activeTexture], tex->mem[0]->hwSurface);
             }
-            buf0 += __glBytesPerElement(tex->t.level[level]->texFormat->pixelType) * tex->t.level[level]->width2 * yoffset;
             hwTexDownloadRows(gc->fx.tmuTexUnit[gc->fx.activeTexture], tex->mem[0]->start, level,
-                         tex->t.maxLevel, tex->aspectRatioLog2, li0->grFormat, buf0, yoffset, yoffset + height - 1);
+                         tex->t.maxLevel, tex->aspectRatioLog2, li->grFormat, buf, t0, t1);
         }
     } else {
         for (i = 0; i < gc->fx.numTMUs; i++) {
             if (tex->onTmu[i]) {
-                lp = tex->t.level[level];
-                li = (lp)->texFormat;
-                buf = lp->buffer;
                 if (gc->hwcx.windowed) {
                     grSurfaceSetTextureSurfaceExt(gc->fx.tmuTexUnit[i], tex->mem[__GL_TMU_SLOT(i)]->hwSurface);
                 }
-                buf += __glBytesPerElement(tex->t.level[level]->texFormat->pixelType) * tex->t.level[level]->width2 * yoffset;
                 hwTexDownloadRows(gc->fx.tmuTexUnit[i], tex->mem[__GL_TMU_SLOT(i)]->start, level,
-                             tex->t.maxLevel, tex->aspectRatioLog2, li->grFormat, buf, yoffset, yoffset + height - 1);
+                             tex->t.maxLevel, tex->aspectRatioLog2, li->grFormat, buf, t0, t1);
             }
         }
     }
