@@ -98,7 +98,7 @@ void __fastcall hwDefaultGuardBand(GLuint *def, RECT *rect)
 }
 
 /* 69029dc1 (size 467) -- hwReadGuardBandTweaks: read the guard-band and Z-cull tweaks (FX_GL_* through Glide's
-** registry / environment lookup).  Original bug kept: FX_GL_GBBOTTOM's default goes into gbLeft. */
+** registry / environment lookup).  Fix: FX_GL_GBBOTTOM's default goes into gbBottom (the original wrote gbLeft). */
 void __fastcall hwReadGuardBandTweaks(__GLcontext *gc)
 {
     GLuint def[4];                      /* left, top, right, bottom */
@@ -137,7 +137,7 @@ void __fastcall hwReadGuardBandTweaks(__GLcontext *gc)
         if (s != NULL)
             gc->fx.gbBottom = (GLfloat)atof(s);
         else
-            *(GLuint *)&gc->fx.gbLeft = def[3];         /* sic */
+            *(GLuint *)&gc->fx.gbBottom = def[3];
     }
     s = REGSTR(gc, "FX_GL_ZCULL_ENABLE");
     if (s != NULL && *s == '1')

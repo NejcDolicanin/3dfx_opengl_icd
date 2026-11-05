@@ -42,7 +42,8 @@ typedef struct VaFillBlockRec {
     GLubyte    *fetchVertex;                /* 0x25c  the second entry (va->fetchVertex on a cache hit) */
     GLuint      raw_260[(0x804 - 0x260) / 4];
     __GLfloat   gb[16];                     /* 0x804  guard band: SSE gbLeft, gbRight, gbBottom, gbTop (4 copies
-                                               each, stored with movaps); 3DNow {gbRight, gbTop, gbLeft, gbBottom} */
+                                               each, stored with movups: 0x804 is not 16-byte aligned); 3DNow
+                                               {gbRight, gbTop, gbLeft, gbBottom} */
     GLuint      gbBits[4];                  /* 0x844  3DNow: the right, top, left, bottom clip bits */
 } VaFillBlock;
 
@@ -75,8 +76,8 @@ typedef GLubyte *(__fastcall *VaCacheLookupFn)(__GLcontext *gc, __GLhwBufRecICD 
 **     the window coordinates and the texture coordinates scaled for Glide;
 **   fetchVertex(gc, vertex) (ret): once per vertex (flag 0x20), fetch its colour; GB_CLIP (the
 **     environment variable, read while generating) adds flag 0x800 when x or y is beyond 1.1 * |w|.
-** Original bug kept: on SSE CPUs with the guard band (fullscreen) the entry stores the guard-band vectors
-** with movaps to blk + 0x804, which is not 16-byte aligned (blk is page aligned). */
+** Fix: on SSE CPUs with the guard band (fullscreen) the entry stores the guard-band vectors with movups; the
+** original used movaps on blk + 0x804, which is not 16-byte aligned (an alignment fault on every call). */
 #pragma optimize("", off)
 void __fastcall hwGenVertexArrayFill(__GLcontext *gc)
 {
@@ -264,16 +265,16 @@ void __fastcall hwGenVertexArrayFill(__GLcontext *gc)
         if ((gc->constants.cpuCaps & __GL_CPU_SSE) != 0) {
           EMIT(og_movss(gc, R(mm0), MEM(&gc->fx.gbLeft)));
           EMIT(og_shufps(gc, R(mm0), R(mm0), IMM(0)));
-          EMIT(og_movaps(gc, MEM((GLuint)blk + BOFS(gb[0])), R(mm0)));
+          EMIT(og_movups(gc, MEM((GLuint)blk + BOFS(gb[0])), R(mm0)));
           EMIT(og_movss(gc, R(mm0), MEM(&gc->fx.gbRight)));
           EMIT(og_shufps(gc, R(mm0), R(mm0), IMM(0)));
-          EMIT(og_movaps(gc, MEM((GLuint)blk + BOFS(gb[4])), R(mm0)));
+          EMIT(og_movups(gc, MEM((GLuint)blk + BOFS(gb[4])), R(mm0)));
           EMIT(og_movss(gc, R(mm0), MEM(&gc->fx.gbBottom)));
           EMIT(og_shufps(gc, R(mm0), R(mm0), IMM(0)));
-          EMIT(og_movaps(gc, MEM((GLuint)blk + BOFS(gb[8])), R(mm0)));
+          EMIT(og_movups(gc, MEM((GLuint)blk + BOFS(gb[8])), R(mm0)));
           EMIT(og_movss(gc, R(mm0), MEM(&gc->fx.gbTop)));
           EMIT(og_shufps(gc, R(mm0), R(mm0), IMM(0)));
-          EMIT(og_movaps(gc, MEM((GLuint)blk + BOFS(gb[12])), R(mm0)));
+          EMIT(og_movups(gc, MEM((GLuint)blk + BOFS(gb[12])), R(mm0)));
         }
         else {
           if ((gc->constants.cpuCaps & __GL_CPU_3DNOW) != 0) {
