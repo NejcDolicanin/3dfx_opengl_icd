@@ -209,8 +209,8 @@ BOOL WINAPI wglChoosePixelFormatARB(HDC hdc, const int *iattrs, const FLOAT *fat
     devCount = wglGlideDescribePixelFormat(hdc, NULL, -1);
     i = 1;
     found = 0;
-    /* (no check against maxFormats in the loop: the original writes every matching format) */
-    for (; maxFormats > 0 && i <= total; i++) {
+    /* fix: stop at maxFormats (the original wrote every match past the caller's array: SDL crash, Quakespasm) */
+    for (; (UINT)found < maxFormats && i <= total; i++) {
         int match;
         memset(&fmt, 0, sizeof(fmt));
         fmt.pfd.nSize = sizeof(fmt); fmt.pfd.nVersion = 1;     /* 0x2c, as above */
