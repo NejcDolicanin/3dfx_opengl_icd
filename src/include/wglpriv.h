@@ -368,7 +368,7 @@ BOOL WINAPI wglGetPixelFormatAttribivARB(HDC, int, int, UINT, const int *, int *
 BOOL WINAPI wglGetPixelFormatAttribfvARB(HDC, int, int, UINT, const int *, FLOAT *);
 BOOL WINAPI wglChoosePixelFormatARB(HDC, const int *, const FLOAT *, UINT, int *, UINT *);
 void APIENTRY glTBufferMask3DFX_impl(GLuint mask);
-void wglReloadGammaRamp(void);
+void __fastcall wglReloadGammaRamp(__GLcontext *gc);
 void      __fastcall wglRcCallback(__GLcontext *gc, void *table);             /* 6900c370 */
 GLuint    __fastcall wglRcSwapBuffers(__GLcontext *gc);             /* 6900c380 */
 

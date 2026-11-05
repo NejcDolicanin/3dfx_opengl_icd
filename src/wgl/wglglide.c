@@ -380,7 +380,7 @@ void __fastcall wglGlideRestore(HWND hwnd)
             texMgr = gc->texMgr;
             ctx = fx->hwcx.glideContext = wglGlideWinOpen(gc, fx->hwcx.resolution);   /* the mode it had */
             if (ctx != 0 && ctx != -1) {
-                wglReloadGammaRamp();
+                wglReloadGammaRamp(gc);
                 (*texMgr->reset)(gc, gc->texMgr);                          /* 6903b7a0: rebuild the texture heaps */
                 hwDirtyAllGrState(gc);                                          /* every Glide state record dirty */
                 ((void (__fastcall *)(__GLcontext *))hwFlushGrState)(gc);   /* EDX not set */

@@ -7,10 +7,17 @@
 #include "icdprotos.h"
 #include <glide.h>
 
+/* a real (hardware) gc is current: not NULL and not the null context, which has no hwcx / fx fields (fix) */
+static __inline BOOL wglHasHwContext(__GLcontext *gc)
+{
+    return gc != NULL && gc != g_nullGC;
+}
+
 /* 69014590 -- wglQueryMultisample3DFX(samples): supported? (needs T-buffer and fullscreen) */
 BOOL WINAPI wglQueryMultisample3DFX(int samples)
 {
     __GLcontext *gc = __glCurrentGC();
+    if (!wglHasHwContext(gc)) return FALSE;
     if (__glCurrentGC()->beginMode == 1) {      /* __GL_SETUP_NOT_IN_BEGIN: a second fetch */ __glSetError(GL_INVALID_OPERATION); return FALSE; }
     if (gc->hwcx.hasTBuffer && !gc->hwcx.windowed) {
         if (samples == 1) return TRUE;
@@ -25,6 +32,7 @@ BOOL WINAPI wglSetMultisample3DFX(int samples)
     __GLcontext *gc = __glCurrentGC();
     GLuint n;                                   /* fx.numSamples is unsigned */
     HWND hwnd;
+    if (!wglHasHwContext(gc)) return FALSE;
     if (__glCurrentGC()->beginMode == 1) {      /* __GL_SETUP_NOT_IN_BEGIN: a second fetch */ __glSetError(GL_INVALID_OPERATION); return FALSE; }
     if (!gc->hwcx.hasTBuffer || gc->hwcx.windowed) return FALSE;
     if (samples == 1) {
@@ -70,6 +78,7 @@ BOOL WINAPI wglSetDeviceGammaRamp3DFX(HDC hdc, LPVOID lpRamp)
     GLuint r[256], g[256], b[256];
     int n, i, step;
     (void)hdc;
+    if (!wglHasHwContext(gc)) return FALSE;
     if (__glCurrentGC()->beginMode == 1) {      /* __GL_SETUP_NOT_IN_BEGIN: a second fetch */ __glSetError(GL_INVALID_OPERATION); return FALSE; }
     if (wglRampNonZero(gc, ramp)) {
         memcpy(&gc->hwcx.gammaRamp[0][0], ramp, 0x600);
@@ -95,6 +104,7 @@ BOOL WINAPI wglGetDeviceGammaRamp3DFX(HDC hdc, LPVOID lpRamp)
     GLuint r[256], g[256], b[256];
     int n, i, step;
     (void)hdc;
+    if (!wglHasHwContext(gc)) return FALSE;
     if (__glCurrentGC()->beginMode == 1) {      /* __GL_SETUP_NOT_IN_BEGIN: a second fetch */ __glSetError(GL_INVALID_OPERATION); return FALSE; }
     if (gc->hwcx.hasGetGamma) {
         n = grGetInteger(GR_GAMMA_TABLE_ENTRIES);
@@ -114,10 +124,9 @@ BOOL WINAPI wglGetDeviceGammaRamp3DFX(HDC hdc, LPVOID lpRamp)
     return TRUE;
 }
 
-/* 69014960 -- re-apply the stored ramp after the Glide screen was reopened */
-void wglReloadGammaRamp(void)
+/* 69014960 -- re-apply gc's stored ramp after its Glide screen was reopened (fix: gc passed in, not the current one) */
+void __fastcall wglReloadGammaRamp(__GLcontext *gc)
 {
-    __GLcontext *gc = __glCurrentGC();
     const WORD *ramp = &gc->hwcx.gammaRamp[0][0], *gp, *bp;
     GLuint r[256], g[256], b[256];
     int n, i, step;

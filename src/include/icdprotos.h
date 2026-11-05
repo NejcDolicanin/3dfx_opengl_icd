@@ -1009,7 +1009,7 @@ void __fastcall winSetFrontSurface(__GLcontext *gc, int edx_unused);
 /* wgl/wgldev.c */
 void __fastcall wglDevForceSWRendering(__GLcontext *gc, void *arg);
 /* wgl/wglext3dfx.c */
-void wglReloadGammaRamp(void);
+void __fastcall wglReloadGammaRamp(__GLcontext *gc);
 /* wgl/wglfont.c */
 BOOL WINAPI wglSAUseFontBitmapsA(HDC hdc, DWORD first, DWORD count, DWORD listBase);
 BOOL WINAPI wglSAUseFontBitmapsW(HDC hdc, DWORD first, DWORD count, DWORD listBase);

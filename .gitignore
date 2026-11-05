@@ -5,6 +5,7 @@
 
 # ---- private working notes (kept on disk, not in the repository)
 RE-NOTES.md
+knownBugs.txt
 
 # ---- build output (tools/vc6build.sh writes everything into build/out)
 build/out/
