@@ -215,15 +215,46 @@ __GLtextureFxICD *__fastcall hwCreateTexture(__GLcontext *gc, GLuint name, GLuin
     return t;
 }
 
+/* hwTexIsSplit: the texture is drawn with split-TMU trilinear (FX_GL_TRILINEAR_ENABLED 2, fullscreen): a
+** *_MIPMAP_LINEAR filter and at least 16 texels on one side (smaller ones, like particles, gain nothing and would
+** pay for both TMUs), not compressed (split FXT1 chains show block noise in some levels on the VSA-100; they keep
+** the nearest mip level).  Resident as onTmu 3: its odd mip levels for TMU0, then its even ones for TMU1 */
+GLboolean __fastcall hwTexIsSplit(__GLcontext *gc, __GLtextureICD *tex)
+{
+    return gc->fx.trilinearMode == 2 && !gc->hwcx.windowed &&
+           (tex->params.minFilter == GL_LINEAR_MIPMAP_LINEAR || tex->params.minFilter == GL_NEAREST_MIPMAP_LINEAR) &&
+           (tex->level[0]->width >= 16 || tex->level[0]->height >= 16) &&
+           tex->level[0]->compressedImage == NULL;
+}
+
+/* hwTexDownloadLevel: download rows t0..t1 of a level into the texture's TMU memory; a split texture (onTmu 3) gets
+** them in its odd part for TMU0 or its even part for TMU1 (Glide skips the level in the other part's call) */
+void __fastcall hwTexDownloadLevel(__GLcontext *gc, __GLtextureFxICD *tex, GLuint tmu, GLint level, GLint fmt,
+                                   void *data, GLint t0, GLint t1)
+{
+    GLuint start = TEX_SLOT(tex->mem, tmu)->start;
+    GrTexInfo *info;
+
+    if (TEX_SLOT(tex->onTmu, tmu) == 3) {
+        info = (GrTexInfo *)&tex->smallLodLog2;
+        grTexDownloadMipMapLevelPartial(GR_TMU0, start, tex->t.maxLevel - level, tex->t.maxLevel,
+                                        tex->aspectRatioLog2, fmt, GR_MIPMAPLEVELMASK_ODD, data, t0, t1);
+        grTexDownloadMipMapLevelPartial(GR_TMU1, start + grTexTextureMemRequired(GR_MIPMAPLEVELMASK_ODD, info),
+                                        tex->t.maxLevel - level, tex->t.maxLevel, tex->aspectRatioLog2, fmt,
+                                        GR_MIPMAPLEVELMASK_EVEN, data, t0, t1);
+        return;
+    }
+    hwTexDownloadRows(gc->fx.tmuTexUnit[tmu], start, level, tex->t.maxLevel, tex->aspectRatioLog2, fmt, data, t0, t1);
+}
+
 /* 6903bb00 (size 547) -- MakeResident: tex->makeResident of the sst texture object: make it resident on a TMU. 
 ** Refuse a border / a non-default border colour unless clamped to edge, and palettes the hardware cannot take; reuse
-** a download whose mipmap state fits (onTmu 1 mipmapped, 2 base level only), else download (MakeResidentRetry) and load
-** (DownloadTexture).  Two download call sites (VC6 cross-jumps them into the original's one call) joining one
-** shared fail / load tail (the tail written once keeps 1 in ebp and the original's edx zero) */
+** a download whose layout fits (onTmu 1 mipmapped, 2 base level only, 3 split trilinear), else download
+** (MakeResidentRetry) and load (DownloadTexture) */
 GLuint __fastcall MakeResident(__GLcontext *gc, __GLtextureFxICD *tex, GLuint a, GLuint tmu)
 {
     __GLmipMapLevelICD *lvl0 = tex->t.level[0];
-    GLint fmt, state;
+    GLint fmt, state, want;
     GLuint ok;
 
     if ((lvl0->border > 0 ||
@@ -245,25 +276,20 @@ GLuint __fastcall MakeResident(__GLcontext *gc, __GLtextureFxICD *tex, GLuint a,
     }
     state = TEX_SLOT(tex->onTmu, tmu);
     if (state != 0) {
-        if (tex->t.params.minFilter != GL_NEAREST && tex->t.params.minFilter != GL_LINEAR) {
-            if (state == 1) {
-                TEX_SLOT(tex->t.hwHandle, tmu) = 1;
-                if (gc->hwcx.windowed)
-                    grSurfaceSetTextureSurfaceExt(gc->fx.tmuTexUnit[tmu], TEX_SLOT(tex->mem, tmu)->hwSurface);
-                TEX_SLOT(tex->t.hwHandle, tmu) = 1;
-                return 1;
-            }
-        } else if (state == 2) {
-            TEX_SLOT(tex->t.hwHandle, tmu) = 1;
+        if (hwTexIsSplit(gc, &tex->t))
+            want = 3;
+        else if (tex->t.params.minFilter != GL_NEAREST && tex->t.params.minFilter != GL_LINEAR)
+            want = 1;
+        else
+            want = 2;
+        if (state == want) {
             if (gc->hwcx.windowed)
                 grSurfaceSetTextureSurfaceExt(gc->fx.tmuTexUnit[tmu], TEX_SLOT(tex->mem, tmu)->hwSurface);
             TEX_SLOT(tex->t.hwHandle, tmu) = 1;
             return 1;
         }
-        ok = MakeResidentRetry(gc, tex, a, tmu);
-    } else {
-        ok = MakeResidentRetry(gc, tex, a, tmu);
     }
+    ok = MakeResidentRetry(gc, tex, a, tmu);
     if (!ok) {
         TEX_SLOT(tex->t.hwHandle, tmu) = 0;
         return 0;
@@ -274,8 +300,8 @@ GLuint __fastcall MakeResident(__GLcontext *gc, __GLtextureFxICD *tex, GLuint a,
 }
 
 /* 6903bd30 (size 321) -- DownloadTexture: download the texture's levels (all when mipmapped resident, else level 0)
-** into its TMU memory block; FXT1 levels go as their compressed image in whole 4-row blocks, or, replicated for
-** a wide aspect, as the uncompressed buffer in GR_TEXFMT_ARGB_8888 (0x12) */
+** into its TMU memory block (a split one in its two parts, hwTexDownloadLevel); FXT1 levels go as their compressed
+** image in whole 4-row blocks, or, replicated for a wide aspect, as the uncompressed buffer in GR_TEXFMT_ARGB_8888 */
 void __fastcall DownloadTexture(__GLcontext *gc, __GLtextureFxICD *tex, GLuint tmu)
 {
     GLint h, maxLevel, w;
@@ -285,7 +311,7 @@ void __fastcall DownloadTexture(__GLcontext *gc, __GLtextureFxICD *tex, GLuint t
     const __GLtextureFormatICD *info;
 
     slot = __GL_TMU_SLOT(tmu);
-    if (tex->onTmu[slot] == 1)
+    if (tex->onTmu[slot] != 2)
         maxLevel = tex->t.maxLevel;
     else
         maxLevel = 0;
@@ -312,8 +338,7 @@ void __fastcall DownloadTexture(__GLcontext *gc, __GLtextureFxICD *tex, GLuint t
             h = (lvl->height + 3) & ~3;                 /* whole 4-row FXT1 blocks */
             fmt = info->grFormat;
         }
-        hwTexDownloadRows(gc->fx.tmuTexUnit[tmu], TEX_SLOT(tex->mem, tmu)->start, level,
-                     tex->t.maxLevel, tex->aspectRatioLog2, fmt, data, 0, h - 1);
+        hwTexDownloadLevel(gc, tex, tmu, level, fmt, data, 0, h - 1);
     }
 }
 
@@ -445,7 +470,7 @@ GLboolean __fastcall MakeResidentTryAllocateSurface(__GLcontext *gc, __GLtexture
 }
 
 /* 6903c340 (size 596) -- __glSSTAllocateTextureMemory: allocate TMU memory for a texture (all levels when
-** mipmapped, else the base level): reuse its block when the size still fits, else take blocks from the rover (or the
+** mipmapped, a split trilinear one as its odd levels then its even ones, else the base level): reuse its block when the size still fits, else take blocks from the rover (or the
 ** heap start), evicting their textures and merging them; in windowed mode a surface slot only */
 GLint __fastcall __glSSTAllocateTextureMemory(__GLcontext *gc, __GLtextureFxICD *tex, GLuint unused, GLuint tmu)
 {
@@ -454,7 +479,7 @@ GLint __fastcall __glSSTAllocateTextureMemory(__GLcontext *gc, __GLtextureFxICD 
     GLint state, size, left;
 
     if (tex->t.params.minFilter != GL_NEAREST && tex->t.params.minFilter != GL_LINEAR) {
-        state = 1;
+        state = hwTexIsSplit(gc, &tex->t) ? 3 : 1;
         tex->smallLodLog2 = 0;
     } else {
         state = 2;
@@ -471,12 +496,18 @@ GLint __fastcall __glSSTAllocateTextureMemory(__GLcontext *gc, __GLtextureFxICD 
                 blk = texMgrSplit(gc, blk, 0);
         }
     } else {
-        size = grTexTextureMemRequired(GR_MIPMAPLEVELMASK_BOTH, (GrTexInfo *)&tex->smallLodLog2);
+        if (state == 3)
+            size = grTexTextureMemRequired(GR_MIPMAPLEVELMASK_ODD, (GrTexInfo *)&tex->smallLodLog2) +
+                   grTexTextureMemRequired(GR_MIPMAPLEVELMASK_EVEN, (GrTexInfo *)&tex->smallLodLog2);
+        else
+            size = grTexTextureMemRequired(GR_MIPMAPLEVELMASK_BOTH, (GrTexInfo *)&tex->smallLodLog2);
         tex->memRequired = size;
         b = TEX_SLOT(tex->mem, tmu);
         if (b != NULL) {
-            if ((GLint)b->size == size)
+            if ((GLint)b->size == size) {
+                TEX_SLOT(tex->onTmu, tmu) = state;      /* the layout may change at the same size (split) */
                 return 1;
+            }
             __glSSTFreeTextureMemory(gc, tex, tmu);
         }
         blk = m->rover[__GL_TMU_SLOT(tmu)]->next;

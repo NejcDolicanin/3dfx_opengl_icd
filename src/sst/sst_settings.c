@@ -293,6 +293,21 @@ void __fastcall hwReadForce16bppTextures(__GLcontext *gc)
   else gc->fx.force16bppTextures = 0;
 }
 
+/* hwReadTrilinearMode: FX_GL_TRILINEAR_ENABLED from the registry or environment, how the *_MIPMAP_LINEAR filters
+** are drawn: '1' LOD dithering, '2' split-TMU trilinear; '0' or unset: nearest mip level (bilinear).  Read once at
+** Glide init (hwInitGlideExtensions): mode 2 makes the context single-texture, which the vertex layout, the
+** extension string and the combine path depend on.  Without two TMUs in one texture memory it falls back to 1 */
+void __fastcall hwReadTrilinearMode(__GLcontext *gc)
+{
+  const char *s;
+
+  s = hwRegOrEnvString("FX_GL_TRILINEAR_ENABLED");
+  if (s != NULL && (*s == '1' || *s == '2')) gc->fx.trilinearMode = *s - '0';
+  else gc->fx.trilinearMode = 0;
+  if (gc->fx.trilinearMode == 2 && (gc->hwcx.numTMU != 2 || !gc->hwcx.hasTexUMA))
+      gc->fx.trilinearMode = 1;
+}
+
 /* 6902a81e -- hwReadPerfSettings (size 232): FX_GL_SUPER, FX_GL_MIN_VERTEX_STRIDE (pending buffers) and FX_GL_HSR */
 void __fastcall hwReadPerfSettings(__GLcontext *gc)
 {

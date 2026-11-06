@@ -220,7 +220,7 @@ void __fastcall hwValidateTextures(__GLcontext *gc)
                     __glSSTLoadCombineFunctionExt(gc, (int)tex, unit);
                 else
                     __glSSTLoadCombineFunction(gc, (GLuint)tex, unit);
-                hwLoadTexFilterWrap(gc, &tex->params, unit);
+                hwLoadTexFilterWrap(gc, tex, unit);
                 hwSetTmuSource(gc, tex, unit);
                 gc->hwcx.unitTexture[unit] = (void *)__glCurrentTexture(gc, unit);
             }

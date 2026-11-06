@@ -140,7 +140,9 @@
         gc->hwcx.grDirty |= (bit);                                  \
     }
 /* the texture parameters of one TMU: grState[f] = filter {mag, min}, [f+1] = clamp {s, t},
-** [f+2] = mipmap {mode} (Glide: 0 point / none / wrap, 1 bilinear / nearest / clamp) */
+** [f+2] = mipmap {mode, lodBlend} (Glide: 0 point / none / wrap, 1 bilinear / nearest / clamp; mode 2 = nearest
+** with LOD dithering, used for the *_MIPMAP_LINEAR filters when FX_GL_TRILINEAR_ENABLED is 1: the mip level is
+** dithered per pixel instead of blended.  lodBlend is set by hwLoadTexFilterWrap for split trilinear) */
 #define TEXPARAMS(f, fbit, cbit, mbit)                                      \
     switch (params->minFilter) {                                                \
       case GL_LINEAR:                                                           \
@@ -152,14 +154,20 @@
         GRSET(f + 2, 0, 0, mbit);                                           \
         break;                                                                  \
       case GL_LINEAR_MIPMAP_NEAREST:                                            \
-      case GL_LINEAR_MIPMAP_LINEAR:                                             \
         GRSET(f, 1, 1, fbit);                                               \
         GRSET(f + 2, 0, 1, mbit);                                           \
         break;                                                                  \
+      case GL_LINEAR_MIPMAP_LINEAR:                                             \
+        GRSET(f, 1, 1, fbit);                                               \
+        GRSET(f + 2, 0, gc->fx.trilinearMode == 1 ? 2 : 1, mbit);               \
+        break;                                                                  \
       case GL_NEAREST_MIPMAP_NEAREST:                                           \
-      case GL_NEAREST_MIPMAP_LINEAR:                                            \
         GRSET(f, 1, 0, fbit);                                               \
         GRSET(f + 2, 0, 1, mbit);                                           \
+        break;                                                                  \
+      case GL_NEAREST_MIPMAP_LINEAR:                                            \
+        GRSET(f, 1, 0, fbit);                                               \
+        GRSET(f + 2, 0, gc->fx.trilinearMode == 1 ? 2 : 1, mbit);               \
         break;                                                                  \
     }                                                                           \
     switch (params->magFilter) {                                                \
@@ -436,6 +444,19 @@ void __fastcall __glSSTLoadCombineFunction(__GLcontext *gc, GLuint unused, GLenu
     if (tex1) unit = tex1->baseFormat;
 
     if (gc->fx.numTMUs == 1) {
+        if (gc->fx.trilinearMode == 2) {
+            /* split trilinear: TMU0 blends its odd mip level with TMU1's even one by the LOD fraction (TMU1 passes
+            ** its texel on); any other texture: TMU0 alone */
+            if (tex0 && hwTexIsSplit(gc, tex0)) {
+                GRS_SET(__GL_GR_TMU0_COMBINE, 0, GR_COMBINE_FUNCTION_BLEND);
+                GRS_SET(__GL_GR_TMU0_COMBINE, 1, GR_COMBINE_FACTOR_ONE_MINUS_LOD_FRACTION);
+                GRS_SET(__GL_GR_TMU1_COMBINE, 0, GR_COMBINE_FUNCTION_LOCAL);
+                GRS_SET(__GL_GR_TMU1_COMBINE, 1, GR_COMBINE_FACTOR_NONE);
+            } else {
+                GRS_SET(__GL_GR_TMU0_COMBINE, 0, GR_COMBINE_FUNCTION_LOCAL);
+                GRS_SET(__GL_GR_TMU0_COMBINE, 1, GR_COMBINE_FACTOR_NONE);
+            }
+        }
         SIMPLE_ENV(env0->mode, fmt0, env0);
         return;
     }
@@ -494,9 +515,22 @@ void __fastcall __glSSTLoadCombineFunction(__GLcontext *gc, GLuint unused, GLenu
 }
 
 /* 69018b00 (size 848) -- hwLoadTexFilterWrap: a texture object's filters and wrap modes into the Glide records of
-** the TMU fed by texture unit `unit` */
-void __fastcall hwLoadTexFilterWrap(__GLcontext *gc, __GLtexObjParamICD *params, GLint unit)
+** the TMU fed by texture unit `unit`; a split trilinear texture sets both TMUs, with LOD blending */
+void __fastcall hwLoadTexFilterWrap(__GLcontext *gc, __GLtextureICD *tex, GLint unit)
 {
+    __GLtexObjParamICD *params = &tex->params;
+    GLint split;
+
+    if (gc->fx.trilinearMode == 2) {
+        split = hwTexIsSplit(gc, tex);
+        TEXPARAMS(4, 0x10, 0x20, 0x40);
+        GRSET(__GL_GR_TMU0_MIPMAP, 1, split, 0x40);
+        if (split) {
+            TEXPARAMS(8, 0x100, 0x200, 0x400);
+        }
+        GRSET(__GL_GR_TMU1_MIPMAP, 1, split, 0x400);
+        return;
+    }
     if (gc->fx.tmuTexUnit[unit] == 0) {
         TEXPARAMS(4, 0x10, 0x20, 0x40);
     } else {
@@ -505,9 +539,18 @@ void __fastcall hwLoadTexFilterWrap(__GLcontext *gc, __GLtexObjParamICD *params,
 }
 
 /* 69018e50 (size 112) -- hwSetTmuSource: points the TMU fed by unit `unit` at a resident texture (and, windowed, at
-** its texture surface) */
+** its texture surface); a split trilinear texture: TMU0 at its odd levels, TMU1 at the even ones after them */
 void __fastcall hwSetTmuSource(__GLcontext *gc, __GLtextureICD *tex, GLuint unit)
 {
+    if (TEX_FX(tex)->onTmu[__GL_TMU_SLOT(unit)] == 3) {
+        GrTexInfo *info = (GrTexInfo *)&TEX_FX(tex)->smallLodLog2;
+        GLuint start = TEX_MEM(tex, __GL_TMU_SLOT(unit))->start;
+
+        grTexSource(GR_TMU0, start, GR_MIPMAPLEVELMASK_ODD, info);
+        grTexSource(GR_TMU1, start + grTexTextureMemRequired(GR_MIPMAPLEVELMASK_ODD, info),
+                    GR_MIPMAPLEVELMASK_EVEN, info);
+        return;
+    }
     if (gc->hwcx.windowed)
         grSurfaceSetTextureSurfaceExt(gc->fx.tmuTexUnit[unit],
             TEX_MEM(tex, __GL_TMU_SLOT(unit))->hwSurface);

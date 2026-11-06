@@ -845,8 +845,7 @@ void __stdcall __glsstim_TexSubImage2D(GLenum target, GLint level, GLint xoffset
             if (gc->hwcx.windowed) {
                 grSurfaceSetTextureSurfaceExt(gc->fx.tmuTexUnit[gc->fx.activeTexture], tex->mem[0]->hwSurface);
             }
-            hwTexDownloadRows(gc->fx.tmuTexUnit[gc->fx.activeTexture], tex->mem[0]->start, level,
-                         tex->t.maxLevel, tex->aspectRatioLog2, li->grFormat, buf, t0, t1);
+            hwTexDownloadLevel(gc, tex, gc->fx.activeTexture, level, li->grFormat, buf, t0, t1);
         }
     } else {
         for (i = 0; i < gc->fx.numTMUs; i++) {

@@ -116,6 +116,13 @@ void __fastcall hwAllocCodeBuffers(__GLcontext *gc)
     gc->hwcx.codeBuf2 = (p + 0x1f) & ~0x1f;
 }
 
+/* hwNumTMUs: the TMUs the GL side drives: one in split trilinear mode (TMU1 then only holds the even mip levels of
+** unit 0's texture and gets TMU0's coordinates by broadcast), else Glide's count */
+GLint __fastcall hwNumTMUs(__GLcontext *gc)
+{
+    return gc->fx.trilinearMode == 2 ? 1 : grGetInteger(GR_NUM_TMU);
+}
+
 /* 690276a0 -- hwSetupVertexLayout: the Glide vertex layout of __GLvertexICD's hardware part (x, y, z, q, packed
 ** ARGB, s / t and q per TMU; with two TMUs GL unit 0 feeds TMU1 and unit 1 TMU0), and the TMU count */
 void __fastcall hwSetupVertexLayout(__GLcontext *gc)
@@ -131,7 +138,7 @@ void __fastcall hwSetupVertexLayout(__GLcontext *gc)
     if (gc->hwcx.nonUnityQ) {
         grVertexLayout(GR_PARAM_Q0, 0x2c, GR_PARAM_ENABLE);
     }
-    n = grGetInteger(GR_NUM_TMU);
+    n = hwNumTMUs(gc);
     gc->fx.numTMUs = n;
     gc->constants.maxTextureUnits = n;
     if (n == 2) {

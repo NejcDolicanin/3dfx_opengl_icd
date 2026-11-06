@@ -694,7 +694,8 @@ void __fastcall hwBeginSpritePoints(__GLcontext *gc)
 
 /* the parameter mask of the current state, and vertexSize = bytes per vertex without 1/w: x, y, ARGB, z with depth
 ** test, 1/w, and per textured TMU s, t (q too with hwcx.nonUnityQ).  One TMU: unit 0 on TMU0; two TMUs: unit 0's
-** coordinates go to TMU1, unit 1's to TMU0 */
+** coordinates go to TMU1, unit 1's to TMU0.  The count is the GL side's (fx.numTMUs): one in split trilinear mode,
+** where TMU1 gets TMU0's s, t by the hardware's broadcast */
 #define PKT3_PARAMS(gc, params, vertexSize) \
     (params) = PKT3_RGB | PKT3_A; \
     (vertexSize) = 12; \
@@ -702,7 +703,7 @@ void __fastcall hwBeginSpritePoints(__GLcontext *gc)
         (params) = PKT3_RGB | PKT3_A | PKT3_Z; \
         (vertexSize) = 16; \
     } \
-    if ((gc)->hwcx.numTMU == 1) { \
+    if ((gc)->fx.numTMUs == 1) { \
         if ((gc)->texture.textureEnabled[0]) { \
             (params) |= PKT3_ST0; \
             (vertexSize) += 8; \

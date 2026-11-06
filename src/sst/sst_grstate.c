@@ -94,7 +94,7 @@ GLboolean __fastcall hwInitGrState(__GLcontext *gc)
     GRS_ALLOC(__GL_GR_TMU0_CLAMP, 8);
     GRS_FIRST(__GL_GR_TMU0_CLAMP, 0);
     GRS_SET(__GL_GR_TMU0_CLAMP, 1, 0);
-    GRS_ALLOC(__GL_GR_TMU0_MIPMAP, 4);
+    GRS_ALLOC(__GL_GR_TMU0_MIPMAP, 8);                  /* {mode, lodBlend} */
     GRS_FIRST(__GL_GR_TMU0_MIPMAP, 1);
     if (gc->hwcx.numTMU == 2) {
         GRS_ALLOC(__GL_GR_TMU1_FILTER, 8);
@@ -103,7 +103,7 @@ GLboolean __fastcall hwInitGrState(__GLcontext *gc)
         GRS_ALLOC(__GL_GR_TMU1_CLAMP, 8);
         GRS_FIRST(__GL_GR_TMU1_CLAMP, 0);
         GRS_SET(__GL_GR_TMU1_CLAMP, 1, 0);
-        GRS_ALLOC(__GL_GR_TMU1_MIPMAP, 4);
+        GRS_ALLOC(__GL_GR_TMU1_MIPMAP, 8);
         GRS_FIRST(__GL_GR_TMU1_MIPMAP, 1);
         if (gc->hwcx.hasCombineExt == 0) {
             GRS_ALLOC(__GL_GR_TMU1_COMBINE, 8);
@@ -342,6 +342,9 @@ void __fastcall hwInitGlideExtensions(__GLcontext *gc)
     if (strstr(ext, " FOGCOORD ") != NULL) {
         gc->hwcx.hasFogCoord = 1;
     }
+    hwReadTrilinearMode(gc);
+    if (gc->fx.trilinearMode == 2)
+        gc->hwcx.hasCombineExt = 0;     /* split trilinear blends the mip levels on the classic TMU combine */
 }
 
 extern void __fastcall hwLinearFogTable(GrFog_t *table, float start, float end);
@@ -384,7 +387,9 @@ void __fastcall hwFlushGrState(__GLcontext *gc, GLuint edx_unused)
             grTexClampMode(0, gc->hwcx.grState[__GL_GR_TMU0_CLAMP][0], gc->hwcx.grState[__GL_GR_TMU0_CLAMP][1]);
             break;
           case __GL_GR_TMU0_MIPMAP:
-            grTexMipMapMode(0, gc->hwcx.grState[__GL_GR_TMU0_MIPMAP][0], 0);
+            /* LOD dithering needs Glide's permission; a reopened Glide context loses it, the flush resends it */
+            if (gc->hwcx.grState[__GL_GR_TMU0_MIPMAP][0] == GR_MIPMAP_NEAREST_DITHER) grEnable(GR_ALLOW_MIPMAP_DITHER);
+            grTexMipMapMode(0, gc->hwcx.grState[__GL_GR_TMU0_MIPMAP][0], gc->hwcx.grState[__GL_GR_TMU0_MIPMAP][1]);
             break;
           case __GL_GR_TMU0_COMBINE:
             r = gc->hwcx.grState[__GL_GR_TMU0_COMBINE];
@@ -397,7 +402,8 @@ void __fastcall hwFlushGrState(__GLcontext *gc, GLuint edx_unused)
             grTexClampMode(1, gc->hwcx.grState[__GL_GR_TMU1_CLAMP][0], gc->hwcx.grState[__GL_GR_TMU1_CLAMP][1]);
             break;
           case __GL_GR_TMU1_MIPMAP:
-            grTexMipMapMode(1, gc->hwcx.grState[__GL_GR_TMU1_MIPMAP][0], 0);
+            if (gc->hwcx.grState[__GL_GR_TMU1_MIPMAP][0] == GR_MIPMAP_NEAREST_DITHER) grEnable(GR_ALLOW_MIPMAP_DITHER);
+            grTexMipMapMode(1, gc->hwcx.grState[__GL_GR_TMU1_MIPMAP][0], gc->hwcx.grState[__GL_GR_TMU1_MIPMAP][1]);
             break;
           case __GL_GR_TMU1_COMBINE:
             r = gc->hwcx.grState[__GL_GR_TMU1_COMBINE];

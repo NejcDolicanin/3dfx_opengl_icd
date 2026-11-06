@@ -751,7 +751,7 @@ GLboolean __fastcall wglDevMakeCurrent(__GLcontext *gc)
     } else {
         if (gc->hwcx.hasTexUMA != 0) grEnable(6 /* GR_TEXTURE_UMA_EXT (g3ext.h) */);
         if (gc->fx.fullscreen != 0) texMgrSetMemoryEnd(gc, grTexMaxAddress(0));   /* texture memory ends at the TMU's top */
-        gc->constants.maxTextureUnits = gc->fx.numTMUs = grGetInteger(GR_NUM_TMU);
+        gc->constants.maxTextureUnits = gc->fx.numTMUs = hwNumTMUs(gc);
         hwSetupVertexLayout(gc);                                             /* the Glide vertex layout */
         if (!gc->modes.doubleBufferMode || getenv("SST_SINGLEBUFFER") != NULL) {
             /* grRenderBuffer(GR_BUFFER_FRONTBUFFER) through the Glide state record */

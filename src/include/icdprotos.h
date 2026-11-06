@@ -808,6 +808,7 @@ int __fastcall hwPageCacheInit(__GLcontext *gc, GLuint edx_unused, __GLhwBufRecI
 GLuint __fastcall hwPageCacheLookup(void *self, __GLhwBufRecICD *t, const void *key, GLuint *outB);
 void __fastcall hwPageCacheTouch(__GLhwBufRecICD *t, __GLhwBufEntryICD **pe);
 void __fastcall hwSetupVertexLayout(__GLcontext *gc);
+GLint __fastcall hwNumTMUs(__GLcontext *gc);
 /* sst/sst_color.c */
 void __stdcall __glsstim_Color3f(GLfloat r, GLfloat g, GLfloat b);
 void __stdcall __glsstim_Color3fv(const GLfloat *v);
@@ -822,7 +823,8 @@ GLubyte *__fastcall og_genColor4f(__GLcontext *gc, GLubyte *pc, GLuint **pool);
 /* sst/sst_combine.c */
 void __fastcall __glSSTLoadCombineFunction(__GLcontext *gc, GLuint unused, GLenum unit);
 void __fastcall __glSSTLoadCombineFunctionExt(__GLcontext *gc, int unused, int unused2);
-void __fastcall hwLoadTexFilterWrap(__GLcontext *gc, __GLtexObjParamICD *params, GLint unit);
+void __fastcall hwLoadTexFilterWrap(__GLcontext *gc, __GLtextureICD *tex, GLint unit);
+GLboolean __fastcall hwTexIsSplit(__GLcontext *gc, __GLtextureICD *tex);
 void __fastcall hwSetTmuSource(__GLcontext *gc, __GLtextureICD *tex, GLuint unit);
 /* sst/sst_depth.c */
 void __fastcall __glSSTInitDepth(__GLdepthBufferICD *fb, __GLcontext *gc);
@@ -916,6 +918,7 @@ void __fastcall hwReadForce16bppTextures(__GLcontext *gc);
 void __fastcall hwReadGuardBandTweaks(__GLcontext *gc);
 void __fastcall hwReadObjectKeyGlow(__GLcontext *gc);
 void __fastcall hwReadPerfSettings(__GLcontext *gc);
+void __fastcall hwReadTrilinearMode(__GLcontext *gc);
 /* sst/sst_stencil.c */
 void __fastcall __glSSTValidateStencil(__GLcontext *gc);
 void __fastcall hwArrayPointerChanged(__GLcontext *gc);
@@ -930,6 +933,8 @@ const __GLtextureFormatICD *__fastcall hwTexelFormat(__GLcontext *gc, GLenum int
 void __fastcall __glSSTCopyTexImage(__GLcontext *gc, void *spanInfo, __GLtextureICD *tex, GLint level);
 void __fastcall hwTexDownloadRows(GLint tmu, GLuint startAddress, GLint level, GLint largeLod, GLint aspectRatio,
                                   GLint format, void *data, GLint t0, GLint t1);
+void __fastcall hwTexDownloadLevel(__GLcontext *gc, __GLtextureFxICD *tex, GLuint tmu, GLint level, GLint fmt,
+                                   void *data, GLint t0, GLint t1);
 GLubyte *__fastcall og_callRel32Locked(__GLcontext *gc, GLubyte *pc, GLuint routine);
 /* sst/sst_texgen.c */
 GLubyte *__fastcall og_windowTransform(__GLcontext *gc, GLubyte *pc);

@@ -638,7 +638,7 @@ void __fastcall hwGenLockedTriangles(__GLcontext *gc)
 
     EMIT(og_mov(gc, R(edi), MEM(&fifo->fifoPtr)));
     if (gc->constants.cpuCaps & __GL_CPU_SSE) {
-        if (gc->hwcx.numTMU == 1) {
+        if (gc->fx.numTMUs == 1) {
             EMIT(og_movlps(gc, R(mm7), MEM(&gc->hwcx.texScale[0][0])));
         }
         else {
@@ -787,7 +787,7 @@ void __fastcall hwGenLockedTriangles(__GLcontext *gc)
         vflags = 7;
         sz = 0x10;
     }
-    if (gc->hwcx.numTMU == 1) {
+    if (gc->fx.numTMUs == 1) {
         if (gc->texture.textureEnabled[0]) {
             vflags |= 0x20;
             sz += 8;
@@ -1034,7 +1034,7 @@ void __fastcall hwGenLockedTriangles(__GLcontext *gc)
         EMIT(og_addps(gc, R(mm5), R(mm6)));
         EMIT(og_addps(gc, R(mm1), R(mm5)));
         EMIT(og_movaps(gc, MEMR(VX(clip.x), eax), R(mm1)));
-        if (gc->hwcx.numTMU == 1) {
+        if (gc->fx.numTMUs == 1) {
             if (gc->texture.textureEnabled[0]) {
                 EMIT(og_mov(gc, R(ecx), MEM(&va->texture.pointer[0])));
                 EMIT(og_movlps(gc, R(mm0), ELT(ecx, edx, 8)));
@@ -1060,7 +1060,7 @@ void __fastcall hwGenLockedTriangles(__GLcontext *gc)
         EMIT(og_shufps(gc, R(mm1), R(mm1), IMM(0)));
         EMIT(og_mulps(gc, R(mm0), R(mm1)));
         LABEL(skip);
-        if (gc->hwcx.numTMU == 1) {
+        if (gc->fx.numTMUs == 1) {
             EMIT(og_movlps(gc, MEMR(VX(texture[0].x), eax), R(mm0)));
         }
         else {

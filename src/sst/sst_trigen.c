@@ -95,7 +95,7 @@ void __fastcall hwBuildFifoTriProcs(__GLcontext *gc)
         fmt = 7;
         size = 0x10;
     }
-    if (gc->hwcx.numTMU == 1) {
+    if (gc->fx.numTMUs == 1) {
         if (gc->texture.textureEnabled[0]) {
             fmt |= 0x20;
             size += 8;
