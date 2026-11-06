@@ -257,6 +257,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved)
 #ifdef ICD_MARK
         { extern LONG WINAPI icdExceptionFilter(EXCEPTION_POINTERS *); SetUnhandledExceptionFilter(icdExceptionFilter); icdHookGlide((HMODULE)hinst); }
 #endif
+        ICD_ARM();
         return wglProcessAttach(hinst);
     case DLL_PROCESS_DETACH:
 #ifdef ICD_MARK

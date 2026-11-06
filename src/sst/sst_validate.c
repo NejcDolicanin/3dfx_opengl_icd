@@ -5,6 +5,7 @@
 */
 #include "wglpriv.h"
 #include <glide.h>
+#include <g3ext.h>
 #include "glsi.h"
 #include "icdglob.h"
 #include "icdprotos.h"
@@ -423,36 +424,48 @@ void __fastcall __glSSTValidateAlphaTest(__GLcontext *gc)
 
 /* 6901f6f0 (size 569) -- __glSSTValidateBlend: the blend state (factors, equation, enable) into the Glide blend
 ** record grState[__GL_GR_ALPHA_BLEND] {src, dst, equation}; blending off loads ONE, ZERO */
-void __fastcall __glSSTValidateBlend(__GLcontext *gc)
+/* GL blend factors -> Glide (no destination alpha: DST_ALPHA -> ONE, ONE_MINUS_DST_ALPHA / SRC_ALPHA_SATURATE -> ZERO).
+** Also the NV_blend_square / GL 1.4 factors, source SRC_COLOR and destination DST_COLOR (and ONE_MINUS_), through
+** Napalm's SAME_COLOR blend factors (as MesaFX; Heretic 2 water).  FALSE for an invalid factor. */
+GLboolean __fastcall hwBlendFactors(__GLcontext *gc, GLenum sfactor, GLenum dfactor, GLuint *src, GLuint *dst)
 {
-    GLenum sfactor = gc->state.raster.blendSrc;
-    GLenum dfactor = gc->state.raster.blendDst;
-    GLuint src, dst;
+    GLboolean same = gc->hwcx.hasAlphaBlendExt != 0;
 
     switch (sfactor) {
-      case GL_ONE: src = GR_BLEND_ONE; break;
-      case GL_ZERO: src = GR_BLEND_ZERO; break;
-      case GL_SRC_ALPHA: src = GR_BLEND_SRC_ALPHA; break;
-      case GL_ONE_MINUS_SRC_ALPHA: src = GR_BLEND_ONE_MINUS_SRC_ALPHA; break;
-      case GL_DST_ALPHA: src = gc->modes.alphaBits ? GR_BLEND_DST_ALPHA : GR_BLEND_ONE; break;
-      case GL_DST_COLOR: src = GR_BLEND_DST_COLOR; break;
-      case GL_ONE_MINUS_DST_COLOR: src = GR_BLEND_ONE_MINUS_DST_COLOR; break;
-      case GL_ONE_MINUS_DST_ALPHA: src = gc->modes.alphaBits ? GR_BLEND_ONE_MINUS_DST_ALPHA : GR_BLEND_ZERO; break;
-      case GL_SRC_ALPHA_SATURATE: src = gc->modes.alphaBits ? GR_BLEND_ALPHA_SATURATE : GR_BLEND_ZERO; break;
-      default:
-        __glSetError(GL_INVALID_ENUM);
-        return;
+      case GL_ONE: *src = GR_BLEND_ONE; break;
+      case GL_ZERO: *src = GR_BLEND_ZERO; break;
+      case GL_SRC_ALPHA: *src = GR_BLEND_SRC_ALPHA; break;
+      case GL_ONE_MINUS_SRC_ALPHA: *src = GR_BLEND_ONE_MINUS_SRC_ALPHA; break;
+      case GL_DST_ALPHA: *src = gc->modes.alphaBits ? GR_BLEND_DST_ALPHA : GR_BLEND_ONE; break;
+      case GL_DST_COLOR: *src = GR_BLEND_DST_COLOR; break;
+      case GL_ONE_MINUS_DST_COLOR: *src = GR_BLEND_ONE_MINUS_DST_COLOR; break;
+      case GL_ONE_MINUS_DST_ALPHA: *src = gc->modes.alphaBits ? GR_BLEND_ONE_MINUS_DST_ALPHA : GR_BLEND_ZERO; break;
+      case GL_SRC_ALPHA_SATURATE: *src = gc->modes.alphaBits ? GR_BLEND_ALPHA_SATURATE : GR_BLEND_ZERO; break;
+      case GL_SRC_COLOR: *src = same ? GR_BLEND_SAME_COLOR_EXT : GR_BLEND_ONE; break;
+      case GL_ONE_MINUS_SRC_COLOR: *src = same ? GR_BLEND_ONE_MINUS_SAME_COLOR_EXT : GR_BLEND_ONE; break;
+      default: return GL_FALSE;
     }
     switch (dfactor) {
-      case GL_ONE: dst = GR_BLEND_ONE; break;
-      case GL_ZERO: dst = GR_BLEND_ZERO; break;
-      case GL_SRC_COLOR: dst = GR_BLEND_SRC_COLOR; break;
-      case GL_ONE_MINUS_SRC_COLOR: dst = GR_BLEND_ONE_MINUS_SRC_COLOR; break;
-      case GL_SRC_ALPHA: dst = GR_BLEND_SRC_ALPHA; break;
-      case GL_ONE_MINUS_SRC_ALPHA: dst = GR_BLEND_ONE_MINUS_SRC_ALPHA; break;
-      case GL_DST_ALPHA: dst = gc->modes.alphaBits ? GR_BLEND_DST_ALPHA : GR_BLEND_ONE; break;
-      case GL_ONE_MINUS_DST_ALPHA: dst = gc->modes.alphaBits ? GR_BLEND_ONE_MINUS_DST_ALPHA : GR_BLEND_ZERO; break;
-      default:
+      case GL_ONE: *dst = GR_BLEND_ONE; break;
+      case GL_ZERO: *dst = GR_BLEND_ZERO; break;
+      case GL_SRC_COLOR: *dst = GR_BLEND_SRC_COLOR; break;
+      case GL_ONE_MINUS_SRC_COLOR: *dst = GR_BLEND_ONE_MINUS_SRC_COLOR; break;
+      case GL_SRC_ALPHA: *dst = GR_BLEND_SRC_ALPHA; break;
+      case GL_ONE_MINUS_SRC_ALPHA: *dst = GR_BLEND_ONE_MINUS_SRC_ALPHA; break;
+      case GL_DST_ALPHA: *dst = gc->modes.alphaBits ? GR_BLEND_DST_ALPHA : GR_BLEND_ONE; break;
+      case GL_ONE_MINUS_DST_ALPHA: *dst = gc->modes.alphaBits ? GR_BLEND_ONE_MINUS_DST_ALPHA : GR_BLEND_ZERO; break;
+      case GL_DST_COLOR: *dst = same ? GR_BLEND_SAME_COLOR_EXT : GR_BLEND_ZERO; break;
+      case GL_ONE_MINUS_DST_COLOR: *dst = same ? GR_BLEND_ONE_MINUS_SAME_COLOR_EXT : GR_BLEND_ZERO; break;
+      default: return GL_FALSE;
+    }
+    return GL_TRUE;
+}
+
+void __fastcall __glSSTValidateBlend(__GLcontext *gc)
+{
+    GLuint src, dst;
+
+    if (!hwBlendFactors(gc, gc->state.raster.blendSrc, gc->state.raster.blendDst, &src, &dst)) {
         __glSetError(GL_INVALID_ENUM);
         return;
     }

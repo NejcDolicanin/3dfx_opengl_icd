@@ -8,6 +8,7 @@
 #include "si_names.h"
 #include "icdglob.h"
 #include <glide.h>
+#include <g3ext.h>
 #include "gldisp.h"
 #include "icdprotos.h"
 #include "og.h"
@@ -360,8 +361,14 @@ void __fastcall hwFlushGrState(__GLcontext *gc, GLuint edx_unused)
         if (gc->hwcx.grDirty & 1) switch (i) {
           case __GL_GR_ALPHA_BLEND:
             if (gc->hwcx.hasAlphaBlendExt) {
+                GLint as, ad;
                 r = gc->hwcx.grState[__GL_GR_ALPHA_BLEND];
-                ((__GLext6)gc->hwcx.grAlphaBlendFunctionExt)(r[0], r[1], r[2], r[0], r[1], r[2]);
+                /* SAME_COLOR is RGB only: alpha takes the alpha factor of that side (as MesaFX) */
+                as = r[0] == GR_BLEND_SAME_COLOR_EXT ? GR_BLEND_SRC_ALPHA :
+                     r[0] == GR_BLEND_ONE_MINUS_SAME_COLOR_EXT ? GR_BLEND_ONE_MINUS_SRC_ALPHA : r[0];
+                ad = r[1] == GR_BLEND_SAME_COLOR_EXT ? GR_BLEND_DST_ALPHA :
+                     r[1] == GR_BLEND_ONE_MINUS_SAME_COLOR_EXT ? GR_BLEND_ONE_MINUS_DST_ALPHA : r[1];
+                ((__GLext6)gc->hwcx.grAlphaBlendFunctionExt)(r[0], r[1], r[2], as, ad, r[2]);
             } else {
                 r = gc->hwcx.grState[__GL_GR_ALPHA_BLEND];
                 grAlphaBlendFunction(r[0], r[1], 0, 0);

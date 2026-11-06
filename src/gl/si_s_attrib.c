@@ -53,6 +53,8 @@ void __stdcall __glim_BlendFunc(GLenum sf, GLenum df)
       case GL_DST_ALPHA:
       case GL_ONE_MINUS_DST_ALPHA:
       case GL_SRC_ALPHA_SATURATE:
+      case GL_SRC_COLOR:                    /* NV_blend_square */
+      case GL_ONE_MINUS_SRC_COLOR:
 #if defined(__GL_SUPPORT_ARB_IMAGING_SUBSET)
       case GL_CONSTANT_COLOR:
       case GL_ONE_MINUS_CONSTANT_COLOR:
@@ -73,6 +75,8 @@ void __stdcall __glim_BlendFunc(GLenum sf, GLenum df)
       case GL_ONE_MINUS_SRC_ALPHA:
       case GL_DST_ALPHA:
       case GL_ONE_MINUS_DST_ALPHA:
+      case GL_DST_COLOR:                    /* NV_blend_square */
+      case GL_ONE_MINUS_DST_COLOR:
 #if defined(__GL_SUPPORT_ARB_IMAGING_SUBSET)
       case GL_CONSTANT_COLOR:
       case GL_ONE_MINUS_CONSTANT_COLOR:

@@ -32,6 +32,299 @@ void icdTrace(const char *msg, DWORD value)
     WriteFile(h, line, n, &w, NULL);
     CloseHandle(h);
 }
+
+/* trace build crash logger: one log line as given */
+static void icdTraceRaw(const char *s)
+{
+    DWORD w;
+    HANDLE h = CreateFileA("C:\\3DFXOGL.LOG", GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) return;
+    SetFilePointer(h, 0, NULL, FILE_END);
+    WriteFile(h, s, (DWORD)lstrlenA(s), &w, NULL);
+    WriteFile(h, "\r\n", 2, &w, NULL);
+    CloseHandle(h);
+}
+
+/* "module+offset" of address a into out; FALSE when a is not inside a loaded module */
+static BOOL icdTraceWhere(char *out, DWORD a)
+{
+    MEMORY_BASIC_INFORMATION mbi;
+    char path[MAX_PATH];
+    const char *name;
+    if (VirtualQuery((LPCVOID)a, &mbi, sizeof mbi) == 0 || mbi.AllocationBase == NULL ||
+        GetModuleFileNameA((HMODULE)mbi.AllocationBase, path, sizeof path) == 0) {
+        wsprintfA(out, "?");
+        return FALSE;
+    }
+    name = path + lstrlenA(path);
+    while (name > path && name[-1] != '\\') name--;
+    wsprintfA(out, "%s+%lx", name, a - (DWORD)mbi.AllocationBase);
+    return TRUE;
+}
+
+static LPTOP_LEVEL_EXCEPTION_FILTER s_icdPrevFilter;
+static LONG s_icdFaults;
+
+/* unhandled exception: log code, registers, code bytes and the module addresses on the stack; then the game's filter */
+static LONG WINAPI icdTraceFilter(EXCEPTION_POINTERS *ep)
+{
+    char line[256], where[96];
+    EXCEPTION_RECORD *er = ep->ExceptionRecord;
+    CONTEXT *c = ep->ContextRecord;
+    const DWORD *sp = (const DWORD *)c->Esp;
+    const BYTE *ip = (const BYTE *)c->Eip;
+    DWORD k, found = 0;
+
+    if (InterlockedIncrement(&s_icdFaults) <= 4) {
+        icdTraceWhere(where, (DWORD)er->ExceptionAddress);
+        wsprintfA(line, "EXCEPTION %08lx at %08lx (%s) flags %lx info %08lx %08lx", er->ExceptionCode,
+                  (DWORD)er->ExceptionAddress, where, er->ExceptionFlags,
+                  er->NumberParameters > 0 ? er->ExceptionInformation[0] : 0,
+                  er->NumberParameters > 1 ? er->ExceptionInformation[1] : 0);
+        icdTraceRaw(line);
+        wsprintfA(line, "  eax %08lx ebx %08lx ecx %08lx edx %08lx esi %08lx edi %08lx ebp %08lx esp %08lx",
+                  c->Eax, c->Ebx, c->Ecx, c->Edx, c->Esi, c->Edi, c->Ebp, c->Esp);
+        icdTraceRaw(line);
+        if (!IsBadReadPtr(ip, 16)) {
+            wsprintfA(line, "  code %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
+                      ip[0], ip[1], ip[2], ip[3], ip[4], ip[5], ip[6], ip[7],
+                      ip[8], ip[9], ip[10], ip[11], ip[12], ip[13], ip[14], ip[15]);
+            icdTraceRaw(line);
+        }
+        for (k = 0; k < 32 && !IsBadReadPtr(sp + k, 16); k += 4) {
+            wsprintfA(line, "  [esp+%03lx] %08lx %08lx %08lx %08lx", k * 4, sp[k], sp[k + 1], sp[k + 2], sp[k + 3]);
+            icdTraceRaw(line);
+        }
+        /* return-address candidates: stack words that point into a loaded module */
+        for (k = 0; k < 4096 && found < 48 && !IsBadReadPtr(sp + k, 4); k++) {
+            if (sp[k] < 0x10000 || !icdTraceWhere(where, sp[k])) continue;
+            wsprintfA(line, "  stack [esp+%04lx] %08lx %s", k * 4, sp[k], where);
+            icdTraceRaw(line);
+            found++;
+        }
+    }
+    return s_icdPrevFilter != NULL ? s_icdPrevFilter(ep) : EXCEPTION_CONTINUE_SEARCH;
+}
+
+/* install the crash logger (again, if the game replaced it), keeping the game's filter to chain to */
+void icdTraceArmFilter(void)
+{
+    LPTOP_LEVEL_EXCEPTION_FILTER p = SetUnhandledExceptionFilter(icdTraceFilter);
+    if (p != icdTraceFilter) {
+        s_icdPrevFilter = p;
+        icdTrace("crash logger armed, chained filter", (DWORD)p);
+    }
+}
+
+/* ---- GL frame capture: toggling Scroll Lock writes the next frame's GL calls to C:\GLFRAMEn.LOG ----
+** opengl32 gets a proxy proc table whose thunks (push slot; jmp icdGLThunkCommon) log the call and jump to the
+** table it was really given; the extension stubs (glstubs.c) enter with slot | 0x8000 and go to the current gc's
+** table.  Records are 8 dwords: a call (slot, 7 stack words), state at a draw (0x1xxxx, 0x3xxxx), a glGet result
+** (0x2xxxx). */
+extern const char *g_glEntryNames[0x150];
+#define ICD_CAPCAP  (1u << 19)
+static DWORD *s_cap;
+static DWORD s_capN, s_capFrame;
+static int s_capOn, s_capKey = -1, s_thunksBuilt;
+static DWORD *s_realTable;
+static DWORD s_proxy[__GL_TAB_ENTRIES];
+static BYTE s_postArg[__GL_TAB_ENTRIES];        /* glGet-style slots: 0xff result only, n: also the words at arg n */
+static struct { DWORD ret, slot, ptr; } s_post[16];
+static int s_postN;
+
+static DWORD *icdCapRec(void)
+{
+    if (s_cap == NULL || s_capN >= ICD_CAPCAP) return NULL;
+    return s_cap + s_capN++ * 8;
+}
+
+/* the state the draw call will use: GL side and what the ICD keeps for Glide */
+static void icdCapState(DWORD slot)
+{
+    __GLcontext *gc = wglGetCurrentGC();
+    DWORD *r;
+    int u;
+    if (gc == NULL || gc == g_nullGC || (r = icdCapRec()) == NULL) return;
+    r[0] = 0x10000 | slot;
+    r[1] = gc->state.enables.general;
+    r[2] = (gc->state.raster.blendSrc << 16) | (gc->state.raster.blendDst & 0xffff);
+    r[3] = *(const DWORD *)&gc->state.current.userColor.a;
+    r[4] = (gc->state.texture.unit[0].env->mode & 0xffff) | (gc->state.texture.unit[1].env->mode << 16);
+    r[5] = ((DWORD)gc->hwcx.grState[__GL_GR_ALPHA_BLEND][0] << 16) | (gc->hwcx.grState[__GL_GR_ALPHA_BLEND][1] & 0xffff);
+    r[6] = gc->hwcx.grDirty;
+    r[7] = gc->hwcx.paletteTexture != NULL ? gc->hwcx.paletteTexture->t.name : 0xffffffff;
+    if ((r = icdCapRec()) == NULL) return;
+    r[0] = 0x30000 | slot;
+    for (u = 0; u < 2; u++) {
+        __GLtextureICD *t = u < gc->fx.numTMUs ? __glCurrentTexture(gc, u) : NULL;
+        __GLtextureFxICD *f = (__GLtextureFxICD *)t;
+        r[1 + u * 3] = t != NULL ? t->name : 0xffffffff;
+        r[2 + u * 3] = t != NULL ? ((t->level[0]->baseFormat & 0xffff) | (t->CT.baseFormat << 16)) : 0;
+        r[3 + u * 3] = (gc->state.enables.texture[u] << 24) | (t != NULL ? ((f->format & 0xff) | (f->paletteLoaded << 8) |
+                       ((t->hwHandle[0] != 0) << 16) | ((t->hwHandle[1] != 0) << 17)) : 0);
+    }
+    r[7] = gc->hwcx.sharedPaletteLoaded | (gc->fx.numTMUs << 8);
+}
+
+/* thunk entry: log the call, return the entry to jump to; glGet-style calls get icdGLPostThunk as return address */
+DWORD __stdcall icdGLPre(DWORD tag, DWORD *sp)
+{
+    extern void icdGLPostThunk(void);
+    DWORD slot = tag & 0x7fff, *r, k;
+    DWORD target = (tag & 0x8000) || s_realTable == NULL ? ((DWORD *)__glGetCurrentDispatch())[slot] : s_realTable[slot];
+    if (s_capOn && (r = icdCapRec()) != NULL) {
+        r[0] = tag;
+        for (k = 1; k < 8; k++) r[k] = sp[k];
+        if (slot == 8 || slot == 311 || slot == 312) icdCapState(slot);    /* glBegin, glDrawArrays, glDrawElements */
+        if (s_postArg[slot] && s_postN < 16) {
+            s_post[s_postN].ret = sp[0];
+            s_post[s_postN].slot = slot;
+            s_post[s_postN].ptr = s_postArg[slot] == 0xff ? 0 : sp[s_postArg[slot]];
+            s_postN++;
+            sp[0] = (DWORD)icdGLPostThunk;
+        }
+    }
+    return target;
+}
+
+/* after a glGet-style call: log the result and the first words it wrote; return the caller's address */
+DWORD __stdcall icdGLPost(DWORD result)
+{
+    DWORD *r, k, *p;
+    s_postN--;
+    if ((r = icdCapRec()) != NULL) {
+        p = (DWORD *)s_post[s_postN].ptr;
+        r[0] = 0x20000 | s_post[s_postN].slot;
+        r[1] = result;
+        r[2] = (DWORD)p;
+        for (k = 0; k < 5; k++) r[3 + k] = p != NULL && !IsBadReadPtr(p + k, 4) ? p[k] : 0xdeadbeef;
+    }
+    return s_post[s_postN].ret;
+}
+
+/* [esp] = tag, [esp+4] = caller's return address: the tag word becomes the target, ret jumps there */
+__declspec(naked) void icdGLThunkCommon(void)
+{
+    __asm {
+        pushad
+        lea eax, [esp + 36]
+        push eax
+        push dword ptr [esp + 36]
+        call icdGLPre
+        mov [esp + 32], eax
+        popad
+        ret
+    }
+}
+
+__declspec(naked) void icdGLPostThunk(void)
+{
+    __asm {
+        push eax
+        push edx
+        push eax
+        call icdGLPost
+        mov ecx, eax
+        pop edx
+        pop eax
+        jmp ecx
+    }
+}
+
+/* the proc table to give opengl32 in place of t: the proxy, built once */
+void *icdTraceProxy(void *t)
+{
+    static const struct { const char *name; BYTE arg; } post[] = {
+        { "glGetBooleanv", 2 }, { "glGetDoublev", 2 }, { "glGetFloatv", 2 }, { "glGetIntegerv", 2 },
+        { "glGetError", 0xff }, { "glGetString", 0xff }, { "glIsEnabled", 0xff }, { "glIsTexture", 0xff },
+        { "glIsList", 0xff }, { "glGetTexParameteriv", 3 }, { "glGetTexParameterfv", 3 },
+        { "glGetTexLevelParameteriv", 4 }, { "glGetTexLevelParameterfv", 4 }, { "glGetTexEnviv", 3 },
+        { "glGetTexEnvfv", 3 }, { "glReadPixels", 7 }, { "glAreTexturesResident", 3 }, { "glRenderMode", 0xff } };
+    DWORD i, k;
+    if (t == NULL) return NULL;
+    if (s_thunksBuilt == 0) {
+        BYTE *c = (BYTE *)VirtualAlloc(NULL, __GL_TAB_ENTRIES * 10, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+        if (c == NULL) return t;
+        for (i = 1; i < __GL_TAB_ENTRIES; i++) {
+            BYTE *p = c + i * 10;
+            p[0] = 0x68; *(DWORD *)(p + 1) = i;                                     /* push i */
+            p[5] = 0xe9; *(DWORD *)(p + 6) = (DWORD)icdGLThunkCommon - (DWORD)(p + 10);   /* jmp common */
+            s_proxy[i] = (DWORD)p;
+        }
+        for (k = 0; k < sizeof(post) / sizeof(post[0]); k++)
+            for (i = 0; i < 0x150; i++)
+                if (lstrcmpA(g_glEntryNames[i], post[k].name) == 0) s_postArg[i + 1] = post[k].arg;
+        s_cap = (DWORD *)VirtualAlloc(NULL, ICD_CAPCAP * 32, MEM_COMMIT, PAGE_READWRITE);
+        s_thunksBuilt = 1;
+        icdTrace("GL capture ready (Scroll Lock toggles a frame capture), buffer", (DWORD)s_cap);
+    }
+    s_realTable = (DWORD *)t;
+    s_proxy[0] = s_realTable[0];
+    return s_proxy;
+}
+
+/* the captured frame as text */
+static void icdCapDump(void)
+{
+    char name[32], line[200], *buf;
+    DWORD i, n = 0, w, *r;
+    HANDLE h;
+    wsprintfA(name, "C:\\GLFRAME%lu.LOG", s_capFrame);
+    h = CreateFileA(name, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    buf = (char *)VirtualAlloc(NULL, 1 << 16, MEM_COMMIT, PAGE_READWRITE);
+    if (h == INVALID_HANDLE_VALUE || buf == NULL) { icdTrace("GL capture: cannot write", s_capFrame); return; }
+    for (i = 0; i < s_capN; i++) {
+        DWORD slot;
+        r = s_cap + i * 8;
+        slot = r[0] & 0x7fff;
+        switch (r[0] >> 16) {
+        case 0:
+            if (slot >= 1 && slot <= 0x150)
+                wsprintfA(line, "%s %08lx %08lx %08lx %08lx %08lx %08lx %08lx\r\n", g_glEntryNames[slot - 1],
+                          r[1], r[2], r[3], r[4], r[5], r[6], r[7]);
+            else
+                wsprintfA(line, "#%lu %08lx %08lx %08lx %08lx %08lx %08lx %08lx\r\n", slot,
+                          r[1], r[2], r[3], r[4], r[5], r[6], r[7]);
+            break;
+        case 1:
+            wsprintfA(line, "  state en %08lx blend %08lx userA %08lx env %08lx grBlend %08lx dirty %08lx palTex %08lx\r\n",
+                      r[1], r[2], r[3], r[4], r[5], r[6], r[7]);
+            break;
+        case 3:
+            wsprintfA(line, "  tex0 %ld fmt %08lx hw %08lx  tex1 %ld fmt %08lx hw %08lx  shpal %08lx\r\n",
+                      r[1], r[2], r[3], r[4], r[5], r[6], r[7]);
+            break;
+        default:
+            wsprintfA(line, "  -> %08lx [%08lx] %08lx %08lx %08lx %08lx %08lx\r\n", r[1], r[2], r[3], r[4], r[5], r[6], r[7]);
+            break;
+        }
+        if (n + lstrlenA(line) > (1 << 16)) { WriteFile(h, buf, n, &w, NULL); n = 0; }
+        lstrcpyA(buf + n, line);
+        n += lstrlenA(line);
+    }
+    WriteFile(h, buf, n, &w, NULL);
+    CloseHandle(h);
+    VirtualFree(buf, 0, MEM_RELEASE);
+    icdTrace("GL capture written: frame file", s_capFrame);
+    icdTrace("  calls + records", s_capN);
+}
+
+/* at each DrvSwapBuffers: finish a running capture; a Scroll Lock toggle starts the next one */
+void icdTraceSwap(void)
+{
+    int key = GetKeyState(VK_SCROLL) & 1;
+    if (s_capOn) {
+        s_capOn = 0;
+        icdCapDump();
+        s_capFrame++;
+    }
+    if (s_capKey != -1 && key != s_capKey && s_cap != NULL) {
+        s_capOn = 1;
+        s_capN = 0;
+        s_postN = 0;
+    }
+    s_capKey = key;
+}
 #endif
 #ifdef ICD_MARK
 volatile DWORD g_icdMarks[1024];

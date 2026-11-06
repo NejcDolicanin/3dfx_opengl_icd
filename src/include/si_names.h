@@ -286,6 +286,10 @@ void __fastcall DoBlendDestSC(__GLcontext *gc, const __GLcolor *source, const __
 void __fastcall DoBlendDestMSC(__GLcontext *gc, const __GLcolor *source, const __GLcolor *dest, __GLcolor *result);
 void __fastcall DoBlendSourceDC(__GLcontext *gc, const __GLcolor *source, const __GLcolor *dest, __GLcolor *result);
 void __fastcall DoBlendSourceMDC(__GLcontext *gc, const __GLcolor *source, const __GLcolor *dest, __GLcolor *result);
+void __fastcall DoBlendSourceSC(__GLcontext *gc, const __GLcolor *source, const __GLcolor *dest, __GLcolor *result);
+void __fastcall DoBlendSourceMSC(__GLcontext *gc, const __GLcolor *source, const __GLcolor *dest, __GLcolor *result);
+void __fastcall DoBlendDestDC(__GLcontext *gc, const __GLcolor *source, const __GLcolor *dest, __GLcolor *result);
+void __fastcall DoBlendDestMDC(__GLcontext *gc, const __GLcolor *source, const __GLcolor *dest, __GLcolor *result);
 void __fastcall Nop(__GLcontext *gc, const __GLcolor *source, const __GLcolor *dest, __GLcolor *result);
 GLint __fastcall __glMap1_size(GLint k, GLint order);
 GLint __fastcall __glMap2_size(GLint k, GLint majorOrder, GLint minorOrder);

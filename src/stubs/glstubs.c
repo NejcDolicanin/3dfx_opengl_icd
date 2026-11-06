@@ -12,7 +12,12 @@
 #include <GL/gl.h>
 extern DWORD g_tebOffContext;      /* 690f65d8 */
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER) && defined(ICD_TRACE)
+/* trace build: through the GL capture (wgldiag.c), slot | 0x8000 = the current gc's table */
+extern void icdGLThunkCommon(void);
+#define GL_BODY(slot) { __asm push 0x8000 + (slot) __asm jmp icdGLThunkCommon }
+#define GL_STUB __declspec(naked)
+#elif defined(_MSC_VER)
 #define GL_BODY(slot) { __asm mov eax, fs:[18h] __asm add eax, g_tebOffContext __asm mov eax, [eax] \
                         __asm jmp dword ptr [eax + 0x1738 + (slot) * 4] }
 #define GL_STUB __declspec(naked)

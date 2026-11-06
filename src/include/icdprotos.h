@@ -824,6 +824,7 @@ GLubyte *__fastcall og_genColor4f(__GLcontext *gc, GLubyte *pc, GLuint **pool);
 void __fastcall __glSSTLoadCombineFunction(__GLcontext *gc, GLuint unused, GLenum unit);
 void __fastcall __glSSTLoadCombineFunctionExt(__GLcontext *gc, int unused, int unused2);
 void __fastcall hwLoadTexFilterWrap(__GLcontext *gc, __GLtextureICD *tex, GLint unit);
+GLboolean __fastcall hwBlendFactors(__GLcontext *gc, GLenum sfactor, GLenum dfactor, GLuint *src, GLuint *dst);
 GLboolean __fastcall hwTexIsSplit(__GLcontext *gc, __GLtextureICD *tex);
 void __fastcall hwSetTmuSource(__GLcontext *gc, __GLtextureICD *tex, GLuint unit);
 /* sst/sst_depth.c */

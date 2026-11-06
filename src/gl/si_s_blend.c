@@ -580,6 +580,58 @@ void __fastcall DoBlendSourceMDC(__GLcontext *gc, const __GLcolor *source,
     result->a = a;
 }
 
+/* NV_blend_square: source factor SRC_COLOR (source * source) */
+void __fastcall DoBlendSourceSC(__GLcontext *gc, const __GLcolor *source,
+                            const __GLcolor *dest, __GLcolor *result)
+{
+    (void)dest;
+    result->r = source->r * source->r * gc->frontBuffer.oneOverRedScale;
+    result->g = source->g * source->g * gc->frontBuffer.oneOverGreenScale;
+    result->b = source->b * source->b * gc->frontBuffer.oneOverBlueScale;
+    result->a = source->a * source->a * gc->frontBuffer.oneOverAlphaScale;
+}
+
+/* NV_blend_square: source factor ONE_MINUS_SRC_COLOR */
+void __fastcall DoBlendSourceMSC(__GLcontext *gc, const __GLcolor *source,
+                             const __GLcolor *dest, __GLcolor *result)
+{
+    __GLfloat one = __GL_ONE_F;
+    (void)dest;
+    result->r = source->r * (one - source->r * gc->frontBuffer.oneOverRedScale);
+    result->g = source->g * (one - source->g * gc->frontBuffer.oneOverGreenScale);
+    result->b = source->b * (one - source->b * gc->frontBuffer.oneOverBlueScale);
+    result->a = source->a * (one - source->a * gc->frontBuffer.oneOverAlphaScale);
+}
+
+/* NV_blend_square: destination factor DST_COLOR (dest * dest) */
+void __fastcall DoBlendDestDC(__GLcontext *gc, const __GLcolor *source,
+                          const __GLcolor *dest, __GLcolor *result)
+{
+    __GLcolor tmpc;
+
+    tmpc.r = dest->r * dest->r * gc->frontBuffer.oneOverRedScale;
+    tmpc.g = dest->g * dest->g * gc->frontBuffer.oneOverGreenScale;
+    tmpc.b = dest->b * dest->b * gc->frontBuffer.oneOverBlueScale;
+    tmpc.a = dest->a * dest->a * gc->frontBuffer.oneOverAlphaScale;
+
+    gc->procs.blendEquation(gc, source, &tmpc, result);
+}
+
+/* NV_blend_square: destination factor ONE_MINUS_DST_COLOR */
+void __fastcall DoBlendDestMDC(__GLcontext *gc, const __GLcolor *source,
+                           const __GLcolor *dest, __GLcolor *result)
+{
+    __GLcolor tmpc;
+    __GLfloat one = __GL_ONE_F;
+
+    tmpc.r = dest->r * (one - dest->r * gc->frontBuffer.oneOverRedScale);
+    tmpc.g = dest->g * (one - dest->g * gc->frontBuffer.oneOverGreenScale);
+    tmpc.b = dest->b * (one - dest->b * gc->frontBuffer.oneOverBlueScale);
+    tmpc.a = dest->a * (one - dest->a * gc->frontBuffer.oneOverAlphaScale);
+
+    gc->procs.blendEquation(gc, source, &tmpc, result);
+}
+
 /* 69093800 -- Nop (s_blend.c) */
 void __fastcall Nop(__GLcontext *gc, const __GLcolor *source,
                 const __GLcolor *dest, __GLcolor *result)

@@ -356,6 +356,12 @@ void __fastcall __glGenericPickBlendProcs(__GLcontext *gc)
       case GL_SRC_ALPHA_SATURATE:
         gc->procs.blendSrc = AS_PROC(DoBlendSourceSAT);
         break;
+      case GL_SRC_COLOR:                    /* NV_blend_square */
+        gc->procs.blendSrc = AS_PROC(DoBlendSourceSC);
+        break;
+      case GL_ONE_MINUS_SRC_COLOR:
+        gc->procs.blendSrc = AS_PROC(DoBlendSourceMSC);
+        break;
     }
     switch (d) {
       case GL_ZERO:
@@ -381,6 +387,12 @@ void __fastcall __glGenericPickBlendProcs(__GLcontext *gc)
         break;
       case GL_ONE_MINUS_DST_ALPHA:
         gc->procs.blendDst = AS_PROC(DoBlendDestMDA);
+        break;
+      case GL_DST_COLOR:                    /* NV_blend_square */
+        gc->procs.blendDst = AS_PROC(DoBlendDestDC);
+        break;
+      case GL_ONE_MINUS_DST_COLOR:
+        gc->procs.blendDst = AS_PROC(DoBlendDestMDC);
         break;
     }
     gc->procs.blendEquation = AS_PROC(BlendAdd);

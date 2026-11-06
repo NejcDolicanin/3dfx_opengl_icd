@@ -92,36 +92,13 @@ void __stdcall __glsstim_AlphaFunc(GLenum func, GLfloat ref)
 /************************************************************************/
 #pragma optimize("y", off)
 /* 6901c640 (size 495) -- __glsstim_BlendFunc: glBlendFunc of the hardware path: the factors and their Glide
-** equivalents (no destination alpha: DST_ALPHA -> ONE, ONE_MINUS_DST_ALPHA / SRC_ALPHA_SATURATE -> ZERO) */
+** equivalents (hwBlendFactors) */
 void __stdcall __glsstim_BlendFunc(GLenum sfactor, GLenum dfactor)
 {
     GLuint src, dst;
     __GL_SETUP_NOT_IN_BEGIN();
 
-    switch (sfactor) {
-      case GL_ONE: src = GR_BLEND_ONE; break;
-      case GL_ZERO: src = GR_BLEND_ZERO; break;
-      case GL_SRC_ALPHA: src = GR_BLEND_SRC_ALPHA; break;
-      case GL_ONE_MINUS_SRC_ALPHA: src = GR_BLEND_ONE_MINUS_SRC_ALPHA; break;
-      case GL_DST_ALPHA: src = gc->modes.alphaBits ? GR_BLEND_DST_ALPHA : GR_BLEND_ONE; break;
-      case GL_DST_COLOR: src = GR_BLEND_DST_COLOR; break;
-      case GL_ONE_MINUS_DST_COLOR: src = GR_BLEND_ONE_MINUS_DST_COLOR; break;
-      case GL_ONE_MINUS_DST_ALPHA: src = gc->modes.alphaBits ? GR_BLEND_ONE_MINUS_DST_ALPHA : GR_BLEND_ZERO; break;
-      case GL_SRC_ALPHA_SATURATE: src = gc->modes.alphaBits ? GR_BLEND_ALPHA_SATURATE : GR_BLEND_ZERO; break;
-      default:
-        __glSetError(GL_INVALID_ENUM);
-        return;
-    }
-    switch (dfactor) {
-      case GL_ONE: dst = GR_BLEND_ONE; break;
-      case GL_ZERO: dst = GR_BLEND_ZERO; break;
-      case GL_SRC_COLOR: dst = GR_BLEND_SRC_COLOR; break;
-      case GL_ONE_MINUS_SRC_COLOR: dst = GR_BLEND_ONE_MINUS_SRC_COLOR; break;
-      case GL_SRC_ALPHA: dst = GR_BLEND_SRC_ALPHA; break;
-      case GL_ONE_MINUS_SRC_ALPHA: dst = GR_BLEND_ONE_MINUS_SRC_ALPHA; break;
-      case GL_DST_ALPHA: dst = gc->modes.alphaBits ? GR_BLEND_DST_ALPHA : GR_BLEND_ONE; break;
-      case GL_ONE_MINUS_DST_ALPHA: dst = gc->modes.alphaBits ? GR_BLEND_ONE_MINUS_DST_ALPHA : GR_BLEND_ZERO; break;
-      default:
+    if (!hwBlendFactors(gc, sfactor, dfactor, &src, &dst)) {
         __glSetError(GL_INVALID_ENUM);
         return;
     }

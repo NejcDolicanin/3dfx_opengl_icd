@@ -196,6 +196,12 @@ void icdTrace(const char *msg, DWORD value);
 extern LONG g_icdLfbLocks;          /* outstanding grLfbLock()s (lifecycle tracing) */
 #define ICD_LFB(n)    (g_icdLfbLocks += (n))
 #define ICD_LFB_N     g_icdLfbLocks
+void icdTraceArmFilter(void);       /* (re)install the crash logger; DllMain attach and every DrvSwapBuffers */
+#define ICD_ARM()     icdTraceArmFilter()
+void *icdTraceProxy(void *t);       /* the GL capture's proxy proc table for opengl32 */
+void icdTraceSwap(void);            /* per DrvSwapBuffers: Scroll Lock frame capture */
+#define ICD_PROXY(t)  icdTraceProxy(t)
+#define ICD_SWAP_HOOK() icdTraceSwap()
 #elif defined(ICD_MARK)
 /* ICD_MARK builds (nmake EXTRA=/DICD_MARK): each trace point is three plain stores (file, line, value) into a
 ** ring -- no calls, no I/O, no stack -- dumped to C:\3DFXOGL.LOG at process detach (for timing-sensitive bugs) */
@@ -218,6 +224,11 @@ int __stdcall icdProbeV(DWORD tag, DWORD v);
 #else
 #define ICD_T(msg, v) ((void)0)
 #define ICD_TD(msg)
+#endif
+#ifndef ICD_ARM
+#define ICD_ARM()     ((void)0)
+#define ICD_PROXY(t)  (t)
+#define ICD_SWAP_HOOK() ((void)0)
 #endif
 #ifndef ICD_LFB
 #define ICD_LFB(n)    ((void)0)

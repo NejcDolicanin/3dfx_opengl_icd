@@ -243,7 +243,7 @@ void __fastcall hwBuildGetStrings(__GLcontext *gc)
             q += sprintf(q, "GL_ARB_multitexture ");
         q += sprintf(q, "GL_EXT_abgr GL_EXT_bgra ");
         if (gc->hwcx.hasAlphaBlendExt)
-            q += sprintf(q, "GL_EXT_blend_subtract ");
+            q += sprintf(q, "GL_EXT_blend_subtract GL_NV_blend_square ");
         q += sprintf(q, "GL_EXT_clip_volume_hint GL_EXT_compiled_vertex_array GL_EXT_packed_pixels "
                         "GL_EXT_point_parameters GL_EXT_stencil_wrap GL_EXT_texture_env_add "
                         "GL_EXT_vertex_array GL_SGIS_texture_edge_clamp ");

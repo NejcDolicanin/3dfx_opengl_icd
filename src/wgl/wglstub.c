@@ -203,7 +203,7 @@ STUB_ATTR BOOL WINAPI wglSwapLayerBuffers(HDC a, UINT b)
 void __fastcall wglRcCallback(__GLcontext *gc, void *table)
 {
     __WGLrc *rc = GC_imports_wscx(gc);
-    if (rc->callbacks != NULL) ((void (__stdcall *)(void *))rc->callbacks)(table);   /* the new dispatch table */
+    if (rc->callbacks != NULL) ((void (__stdcall *)(void *))rc->callbacks)(ICD_PROXY(table));   /* the new dispatch table */
 }
 
 /* 6900c380 -- swap the rc's window under the wgl lock, after telling the core */

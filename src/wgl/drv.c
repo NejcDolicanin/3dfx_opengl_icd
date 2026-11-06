@@ -286,7 +286,7 @@ PGLCLTPROCTABLE WINAPI DrvSetContext(HDC hdc, DHGLRC dhrc, PFN_SETPROCTABLE call
         wglUnlock();
         WGL_CHECK_RESIZE(rc->gc);
     }
-    return (PGLCLTPROCTABLE)__glGetCurrentDispatch();   /* &gc->dispatch table for opengl32 */
+    return (PGLCLTPROCTABLE)ICD_PROXY(__glGetCurrentDispatch());   /* &gc->dispatch table for opengl32 */
 }
 
 /* 6900b960 -- DrvReleaseContext: if a real gc is current, call its exports.loseCurrent (FALSE if that fails), drop
@@ -379,6 +379,8 @@ BOOL WINAPI DrvSwapBuffers(HDC hdc)
     __WGLrc *rc;
     BOOL r;
 
+    ICD_ARM();
+    ICD_SWAP_HOOK();
     hwnd = WindowFromDC(hdc);
     rc = wglRcFromHwnd(hwnd, NULL);
     wglLock();
