@@ -334,7 +334,8 @@ void __stdcall __glim_GetTexParameterfv(GLenum target, GLenum pname, GLfloat v[]
       case GL_TEXTURE_RESIDENT:
 	{
 	    __GLtextureICD *tex = LookupTexture(gc, target);
-	    v[0] = (GLfloat)(tex->hwHandle)[gc->fx.activeTexture];
+	    /* fix: the active unit's TMU slot (one shared slot with TEXUMA), as GL_TRUE / GL_FALSE */
+	    v[0] = tex->hwHandle[__GL_TMU_SLOT(gc->fx.activeTexture)] ? 1.0f : 0.0f;
 	}
 	break;
       default:
@@ -343,7 +344,7 @@ void __stdcall __glim_GetTexParameterfv(GLenum target, GLenum pname, GLfloat v[]
     }
 }
 
-/* 690bb740 -- __glim_GetTexParameteriv (GL_TEXTURE_RESIDENT returns the flag's address: original bug) */
+/* 690bb740 -- __glim_GetTexParameteriv */
 void __stdcall __glim_GetTexParameteriv(GLenum target, GLenum pname, GLint v[])
 {
     __GLtexObjParamICD *pts;
@@ -379,7 +380,8 @@ void __stdcall __glim_GetTexParameteriv(GLenum target, GLenum pname, GLint v[])
 	v[0] = __GL_FLOAT_TO_I(LookupNamePrio(gc, target)->priority);
 	break;
       case GL_TEXTURE_RESIDENT:
-	v[0] = (GLint) &LookupTexture(gc, target)->hwHandle[0];
+	/* fix: the flag's value for the active unit's TMU slot (the original returned &hwHandle[0], never 0) */
+	v[0] = LookupTexture(gc, target)->hwHandle[__GL_TMU_SLOT(gc->fx.activeTexture)] ? GL_TRUE : GL_FALSE;
 	break;
       default:
 	__glSetError(GL_INVALID_ENUM);

@@ -948,8 +948,8 @@ typedef struct __GLtextureICDRec {          /* 0xd4 (SI __GLtexture order; the s
     GLuint      makeResidentArg;            /* +0xc8  makeResident's third argument: nothing sets it (0 from the
                                                  calloc) and every makeResident ignores it */
     GLuint      hwHandle[2];                /* +0xcc  per TMU slot (sst: its texture memory handle; one slot when the
-                                                 TMUs share memory).  glGetTexParameteriv(GL_TEXTURE_RESIDENT)
-                                                 returns &hwHandle[0] (original bug, kept) */
+                                                 TMUs share memory); 1 = loaded in that TMU's memory, read by
+                                                 glGetTexParameter(GL_TEXTURE_RESIDENT) */
 } __GLtextureICD;
 
 /* the sst texture object (createTexture 6903b930: 0x574 bytes): __GLtextureICD and the 3dfx tail.
