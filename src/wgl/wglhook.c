@@ -38,7 +38,11 @@ LRESULT CALLBACK wglMonitorWindowChanges(int code, WPARAM wParam, LPARAM lParam)
     else           { hook = NULL;    haveThread = FALSE; }
 
     switch (msg->message) {
+    case WM_SHOWWINDOW:   ICD_T("hook WM_SHOWWINDOW shown", msg->wParam); ICD_T("  hwnd", msg->hwnd); break;
+    case WM_SIZE:         ICD_T("hook WM_SIZE wParam", msg->wParam); break;
+    case WM_ACTIVATEAPP:  ICD_T("hook WM_ACTIVATEAPP active", msg->wParam); break;
     case WM_DESTROY:
+        ICD_T("hook WM_DESTROY hwnd", msg->hwnd);
         wglLock();
         w = wglFindWindow((HDC)-1, msg->hwnd);
         if (w == NULL) { wglUnlock(); break; }
@@ -59,6 +63,7 @@ LRESULT CALLBACK wglMonitorWindowChanges(int code, WPARAM wParam, LPARAM lParam)
         break;
 
     case WM_ACTIVATE:
+        ICD_T("hook WM_ACTIVATE wParam", msg->wParam); ICD_T("  hwnd", msg->hwnd);
         wglDebugPrintf(">> wglMonitorWindowChanges( WM_ACTIVATE), thread %x\n", GetCurrentThreadId() & 0xffff);
         wglDebugPrintf("In WM_ACTIVATE: wParam = 0x%x\n", msg->wParam);
         if (getenv("HAL_CSIM") == NULL) {
@@ -91,6 +96,7 @@ LRESULT CALLBACK wglMonitorWindowChanges(int code, WPARAM wParam, LPARAM lParam)
         DWORD bpp = (DWORD)msg->wParam;
         DWORD width  = LOWORD(msg->lParam);
         DWORD height = HIWORD(msg->lParam);
+        ICD_T("hook WM_DISPLAYCHANGE w<<16|h", (width << 16) | height); ICD_T("  bpp", bpp);
         if (bpp != g_displayBpp || width != g_displayWidth || height != g_displayHeight) {
             g_displayWidth  = width;
             g_displayHeight = height;

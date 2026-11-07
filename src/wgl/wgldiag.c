@@ -109,7 +109,9 @@ static LONG WINAPI icdTraceFilter(EXCEPTION_POINTERS *ep)
 /* install the crash logger (again, if the game replaced it), keeping the game's filter to chain to */
 void icdTraceArmFilter(void)
 {
-    LPTOP_LEVEL_EXCEPTION_FILTER p = SetUnhandledExceptionFilter(icdTraceFilter);
+    LPTOP_LEVEL_EXCEPTION_FILTER p;
+    if (getenv("ICD_TRACE_NOARM") != NULL) return;          /* bisect aid: no crash logger */
+    p = SetUnhandledExceptionFilter(icdTraceFilter);
     if (p != icdTraceFilter) {
         s_icdPrevFilter = p;
         icdTrace("crash logger armed, chained filter", (DWORD)p);
@@ -163,7 +165,8 @@ static void icdCapState(DWORD slot)
         r[3 + u * 3] = (gc->state.enables.texture[u] << 24) | (t != NULL ? ((f->format & 0xff) | (f->paletteLoaded << 8) |
                        ((t->hwHandle[0] != 0) << 16) | ((t->hwHandle[1] != 0) << 17)) : 0);
     }
-    r[7] = gc->hwcx.sharedPaletteLoaded | (gc->fx.numTMUs << 8);
+    r[7] = gc->hwcx.sharedPaletteLoaded | (gc->fx.numTMUs << 8) | ((gc->hwcx.swTriangles & 0xff) << 16) |
+           ((gc->hwcx.swRendering & 0xff) << 24);     /* sw: triangles / everything on the software rasteriser */
 }
 
 /* thunk entry: log the call, return the entry to jump to; glGet-style calls get icdGLPostThunk as return address */
@@ -242,6 +245,7 @@ void *icdTraceProxy(void *t)
         { "glGetTexEnvfv", 3 }, { "glReadPixels", 7 }, { "glAreTexturesResident", 3 }, { "glRenderMode", 0xff } };
     DWORD i, k;
     if (t == NULL) return NULL;
+    if (getenv("ICD_TRACE_NOPROXY") != NULL) return t;      /* bisect aid: no GL capture proxy */
     if (s_thunksBuilt == 0) {
         BYTE *c = (BYTE *)VirtualAlloc(NULL, __GL_TAB_ENTRIES * 10, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
         if (c == NULL) return t;
@@ -291,7 +295,7 @@ static void icdCapDump(void)
                       r[1], r[2], r[3], r[4], r[5], r[6], r[7]);
             break;
         case 3:
-            wsprintfA(line, "  tex0 %ld fmt %08lx hw %08lx  tex1 %ld fmt %08lx hw %08lx  shpal %08lx\r\n",
+            wsprintfA(line, "  tex0 %ld fmt %08lx hw %08lx  tex1 %ld fmt %08lx hw %08lx  shpal/tmus/swTri/swAll %08lx\r\n",
                       r[1], r[2], r[3], r[4], r[5], r[6], r[7]);
             break;
         default:

@@ -368,8 +368,10 @@ void __fastcall wglGlideClose(__GLcontext *gc)
 void __fastcall wglGlideLose(HWND hwnd)
 {
     GLint *open;
+    ICD_T("wglGlideLose owner", g_glideOwnerGC);
     if (g_glideOwnerGC != NULL && g_glideOwnerGC != g_nullGC) {
         open = &g_glideOwnerGC->fx.glideOpen;
+        ICD_T("  open", *open); ICD_T("  owner hwnd", GC_imports_wscx(g_glideOwnerGC)->window->hwnd);
         if (*open != 0 && hwnd == GC_imports_wscx(g_glideOwnerGC)->window->hwnd) {
             ICD_T("wglGlideLose (WM_ACTIVATE inactive)", hwnd);
             wglGlideWinClose(g_glideOwnerGC);

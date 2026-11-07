@@ -769,13 +769,19 @@ void __fastcall hwPickDrawRoutines(__GLcontext *gc)
     s = getenv("__GL_FORCE_HW");
     if (s != NULL)
         known = atol(s);
+    ICD_T("hwPickDrawRoutines: known hw, InfoExt2", (GLuint)gc->hwcx.grCommandTransportInfoExt2 | known);
     if (gc->hwcx.grCommandTransportInfoExt2 != 0 && known != 0) {
         gc->hwcx.cmdTransportInfo = (*(GrCmdTransportInfo *(__stdcall *)(void))gc->hwcx.grCommandTransportInfoExt2)();
+        ICD_T("hwPickDrawRoutines: cmdTransportInfo", gc->hwcx.cmdTransportInfo);
         gc->hwcx.grCommandTransportMakeRoomExt2 = (__GLproc)grGetProcAddress("grCommandTransportMakeRoomExt2");
+        ICD_T("hwPickDrawRoutines: makeRoom proc", gc->hwcx.grCommandTransportMakeRoomExt2);
         hwBuildFifoTriProcs(gc);
+        ICD_T("hwPickDrawRoutines: FIFO tri procs built", 0);
         og_genOffsetFifo(gc);
+        ICD_T("hwPickDrawRoutines: offset FIFO built", 0);
         return;
     }
+    ICD_T("hwPickDrawRoutines: no direct FIFO", 0);
     gc->hwcx.cmdTransportInfo = NULL;
     gc->hwcx.drawTri = (__GLproc)hwDrawTri;
     gc->hwcx.drawQuad = (__GLproc)hwDrawQuad;

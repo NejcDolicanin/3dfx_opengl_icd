@@ -218,6 +218,7 @@ PGLCLTPROCTABLE WINAPI DrvSetContext(HDC hdc, DHGLRC dhrc, PFN_SETPROCTABLE call
     RECT client, desktop;
     int cx, cy;
 
+    ICD_ARM();                             /* trace: SDL installs its own filter after DllMain */
     cur  = wglGetCurrentGC();
     rc   = wglRcFromHandle(dhrc);
     type = GetObjectType(hdc);
