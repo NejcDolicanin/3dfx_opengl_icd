@@ -11,6 +11,7 @@
 #include "si_names.h"
 #include "icdglob.h"
 #include "icdprotos.h"
+#include "texcmp.h"
 #include <glide.h>
 #include "og.h"
 #include <string.h>
@@ -1246,6 +1247,18 @@ void __stdcall __glsstim_TexParameteriv(GLenum target, GLenum pname, const GLint
 ** formats, and VC6's cross-jumping merges the duplicated 565 / 4444 / RGBA8 blocks into the original's
 ** layout (the RGB8 group must come before GL_RGB).
 */
+/* test switch: FX_GL_RGBA_S3TC_DXT1=1 stores GL_RGBA_S3TC as DXT1 with 1-bit alpha (4 bpp, FXT1's footprint) instead
+** of DXT3 (8 bpp) */
+static GLboolean hwRgbaS3tcAsDxt1(void)
+{
+    static GLint s_on = -1;
+    if (s_on < 0) {
+        const char *s = getenv("FX_GL_RGBA_S3TC_DXT1");
+        s_on = s != NULL && *s == '1';
+    }
+    return (GLboolean)s_on;
+}
+
 const __GLtextureFormatICD *__fastcall hwTexelFormat(__GLcontext *gc, GLenum internalFormat, GLenum *baseFormat)
 {
     switch (internalFormat) {
@@ -1340,16 +1353,33 @@ const __GLtextureFormatICD *__fastcall hwTexelFormat(__GLcontext *gc, GLenum int
       case 0x84ec:                          /* GL_COMPRESSED_INTENSITY_ARB */
         *baseFormat = GL_INTENSITY;
         return &g_texFmtI8;
-      case 0x86b1:                          /* GL_COMPRESSED_RGBA_FXT1_3DFX */
-      case 0x83a2:                          /* GL_RGBA_S3TC, GL_RGBA4_S3TC: stored as FXT1 RGBA */
-      case 0x83a3:
+      case GL_COMPRESSED_RGBA_FXT1_3DFX:
         *baseFormat = GL_RGBA;
         return &g_texFmtFXT1RGBA;
-      case 0x83a0:                          /* GL_RGB_S3TC, GL_RGB4_S3TC: stored as FXT1 RGB */
-      case 0x83a1:
-      case 0x86b0:                          /* GL_COMPRESSED_RGB_FXT1_3DFX */
+      case GL_COMPRESSED_RGB_FXT1_3DFX:
         *baseFormat = GL_RGB;
         return &g_texFmtFXT1RGB;
+      case GL_RGB_S3TC:                     /* S3TC: Napalm's native DXT formats, as MesaFX (was re-encoded as FXT1) */
+      case GL_RGB4_S3TC:
+      case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
+        *baseFormat = GL_RGB;
+        return &g_texFmtDXT1RGB;
+      case GL_RGBA_S3TC:                    /* 8 bpp (DXT3) by the S3TC spec; FX_GL_RGBA_S3TC_DXT1=1: 4 bpp, 1-bit alpha */
+        if (hwRgbaS3tcAsDxt1()) {
+            *baseFormat = GL_RGBA;
+            return &g_texFmtDXT1RGBA;
+        }
+        /* fall through */
+      case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:
+        *baseFormat = GL_RGBA;
+        return &g_texFmtDXT3;
+      case GL_RGBA4_S3TC:                   /* the 4 bpp alpha format of the S3TC spec: DXT1 with 1-bit alpha */
+      case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
+        *baseFormat = GL_RGBA;
+        return &g_texFmtDXT1RGBA;
+      case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:
+        *baseFormat = GL_RGBA;
+        return &g_texFmtDXT5;
     }
     return 0;
 }
@@ -1360,6 +1390,7 @@ const __GLtextureFormatICD *__fastcall hwTexelFormat(__GLcontext *gc, GLenum int
 void __stdcall __glsstim_CompressedTexImage2DARB(GLenum target, GLint level, GLenum internalFormat, GLsizei width, GLsizei height, GLint border, GLsizei imageSize, const GLvoid *data)
 {
     __GLtextureFxICD *tex;
+    __GLmipMapLevelICD *lp;
     GLint i;
 
     __GL_SETUP_NOT_IN_BEGIN();
@@ -1370,9 +1401,14 @@ void __stdcall __glsstim_CompressedTexImage2DARB(GLenum target, GLint level, GLe
         __glSetError(GL_INVALID_OPERATION);
         return;
     }
-    (*(SSTCREATELEVEL)tex->t.createLevel)(gc, tex, level, internalFormat, width, height, 2 * border + 1,
-                                          border, 2);
-    memcpy((void *)tex->t.level[level]->compressedImage, data, imageSize);
+    if ((*(SSTCREATELEVEL)tex->t.createLevel)(gc, tex, level, internalFormat, width, height, 2 * border + 1,
+                                              border, 2) == NULL)
+        return;
+    lp = tex->t.level[level];
+    if (imageSize > lp->compressedSize) imageSize = lp->compressedSize;    /* (the original copied it unchecked) */
+    memcpy(lp->compressedImage, data, imageSize);
+    if (TEXCMP_GR_DXT(lp->texFormat->grFormat))         /* the uncompressed copy, for the software paths */
+        hwDxtDecode(lp->buffer, lp->compressedImage, lp->width, lp->height, lp->texFormat->grFormat);
     for (i = 0; i < gc->fx.numTMUs; i++) {
         (*tex->t.unmakeResident)(gc, tex, i);
     }
@@ -1381,12 +1417,14 @@ void __stdcall __glsstim_CompressedTexImage2DARB(GLenum target, GLint level, GLe
 #pragma optimize("", on)
 
 #pragma optimize("w", on)
-/* 6905ea70 (size 233) -- __glsstim_CompressedTexSubImage2DARB: glCompressedTexSubImage2DARB (the whole level is
-** replaced) -- no aliasing */
+/* 6905ea70 (size 233) -- __glsstim_CompressedTexSubImage2DARB: glCompressedTexSubImage2DARB: the blocks of the
+** sub-rectangle are replaced (the original copied the data over the start of the level whatever the offsets) --
+** no aliasing */
 void __stdcall __glsstim_CompressedTexSubImage2DARB(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLsizei imageSize, const GLvoid *data)
 {
     __GLtextureFxICD *tex;
-    GLint i;
+    __GLmipMapLevelICD *lp;
+    GLint i, g, bw, bb, bpr, nbx, nby, by;
 
     __GL_SETUP_NOT_IN_BEGIN();
 
@@ -1396,7 +1434,24 @@ void __stdcall __glsstim_CompressedTexSubImage2DARB(GLenum target, GLint level, 
         __glSetError(GL_INVALID_OPERATION);
         return;
     }
-    memcpy((void *)tex->t.level[level]->compressedImage, data, imageSize);
+    lp = tex->t.level[level];
+    g = lp->texFormat->grFormat;
+    bw = TEXCMP_BLOCK_W(g);
+    bb = TEXCMP_BLOCK_BYTES(g);
+    bpr = (lp->width + bw - 1) / bw;                    /* blocks per row of the level */
+    nbx = (width + bw - 1) / bw;
+    nby = (height + 3) >> 2;
+    if (xoffset % bw != 0 || (yoffset & 3) != 0 ||
+        (width % bw != 0 && xoffset + width != lp->width) || ((height & 3) != 0 && yoffset + height != lp->height) ||
+        imageSize < nbx * nby * bb) {
+        __glSetError(GL_INVALID_OPERATION);             /* not whole blocks */
+        return;
+    }
+    for (by = 0; by < nby; by++)
+        memcpy((GLubyte *)lp->compressedImage + (((yoffset >> 2) + by) * bpr + xoffset / bw) * bb,
+               (const GLubyte *)data + by * nbx * bb, nbx * bb);
+    if (TEXCMP_GR_DXT(g))                               /* the uncompressed copy, for the software paths */
+        hwDxtDecode(lp->buffer, lp->compressedImage, lp->width, lp->height, g);
     for (i = 0; i < gc->fx.numTMUs; i++) {
         (*tex->t.unmakeResident)(gc, tex, i);
     }
@@ -1516,4 +1571,22 @@ const __GLtextureFormatICD g_texFmtFXT1RGBA = {
 const __GLtextureFormatICD g_texFmtFXT1RGB = {
     16, 0, 8, 8, 8, 8, 0, 0,  32,  GL_RGBA, 5, 4,
     (__GLproc)__glSSTExtractTexelRGBA8, (__GLproc)__glSSTExtractTexelRGBA8_B, NULL, NULL, { 0, 0 }, 17
+};
+/* the S3TC internal formats, stored as Napalm's native DXT blocks (texcmp.h, sst_dxt.c); the uncompressed copy is
+** ARGB8888 like FXT1's */
+const __GLtextureFormatICD g_texFmtDXT1RGB = {                  /* GR_TEXFMT_ARGB_CMP_DXT1, GL_RGB pixels */
+    16, 0, 8, 8, 8, 8, 0, 0,  32,  GL_RGBA, 5, 4,
+    (__GLproc)__glSSTExtractTexelRGBA8, (__GLproc)__glSSTExtractTexelRGBA8_B, NULL, NULL, { 0, 0 }, TEXCMP_GR_DXT1
+};
+const __GLtextureFormatICD g_texFmtDXT1RGBA = {                 /* GR_TEXFMT_ARGB_CMP_DXT1, 1-bit alpha */
+    16, 0, 8, 8, 8, 8, 0, 0,  32,  GL_RGBA, 4, 4,
+    (__GLproc)__glSSTExtractTexelRGBA8, (__GLproc)__glSSTExtractTexelRGBA8_B, NULL, NULL, { 0, 0 }, TEXCMP_GR_DXT1
+};
+const __GLtextureFormatICD g_texFmtDXT3 = {                     /* GR_TEXFMT_ARGB_CMP_DXT3 */
+    16, 0, 8, 8, 8, 8, 0, 0,  32,  GL_RGBA, 4, 4,
+    (__GLproc)__glSSTExtractTexelRGBA8, (__GLproc)__glSSTExtractTexelRGBA8_B, NULL, NULL, { 0, 0 }, TEXCMP_GR_DXT3
+};
+const __GLtextureFormatICD g_texFmtDXT5 = {                     /* GR_TEXFMT_ARGB_CMP_DXT5 */
+    16, 0, 8, 8, 8, 8, 0, 0,  32,  GL_RGBA, 4, 4,
+    (__GLproc)__glSSTExtractTexelRGBA8, (__GLproc)__glSSTExtractTexelRGBA8_B, NULL, NULL, { 0, 0 }, TEXCMP_GR_DXT5
 };

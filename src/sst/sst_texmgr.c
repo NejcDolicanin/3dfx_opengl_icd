@@ -15,14 +15,15 @@
 #include "og.h"
 #include "icdprotos.h"
 #include <stdio.h>
+#include "texcmp.h"
 #include "gldisp.h"
 
 /* 690f66f8 .. 690f6704 -- the default border colour (0, 0, 0, 0): a texture with another one needs
 ** GL_CLAMP_TO_EDGE on the hardware */
 float g_defaultBorderR = 0, g_defaultBorderG = 0, g_defaultBorderB = 0, g_defaultBorderA = 0;
 #define TEX_SLOT(field, tmu)    ((field)[__GL_TMU_SLOT(tmu)])
-/* the two FXT1 compressed texel formats (icdglob.h; 6904d740 picks them for GL_COMPRESSED_RGB / RGBA_FXT1_3DFX) */
-#define IS_FXT1_FORMAT(fi)  ((fi) == &g_texFmtFXT1RGB || (fi) == &g_texFmtFXT1RGBA)
+/* a compressed texel format (FXT1, or the DXT formats the S3TC internal formats are stored in: texcmp.h) */
+#define IS_CMP_FORMAT(fi)  TEXCMP_GR((fi)->grFormat)
 #define DBG     ((void (__cdecl *)(const char *, ...))texMgrDebugPrintf)
 extern int __cdecl txTexCalcMapSize(int w, int h, int fmt);
 extern void __fastcall texMgrRelease(__GLcontext *gc);
@@ -235,6 +236,7 @@ void __fastcall hwTexDownloadLevel(__GLcontext *gc, __GLtextureFxICD *tex, GLuin
     GLuint start = TEX_SLOT(tex->mem, tmu)->start;
     GrTexInfo *info;
 
+    ICD_TEXDL(fmt, txTexCalcMapSize(tex->t.level[level]->width, t1 - t0 + 1, fmt));
     if (TEX_SLOT(tex->onTmu, tmu) == 3) {
         info = (GrTexInfo *)&tex->smallLodLog2;
         grTexDownloadMipMapLevelPartial(GR_TMU0, start, tex->t.maxLevel - level, tex->t.maxLevel,
@@ -322,7 +324,7 @@ void __fastcall DownloadTexture(__GLcontext *gc, __GLtextureFxICD *tex, GLuint t
         info = lvl->texFormat;
         if (info == NULL)
             continue;
-        if (!IS_FXT1_FORMAT(info)) {
+        if (!IS_CMP_FORMAT(info)) {
             if (tex->wideAspect) {
                 data = ReplicateAspectTexels(gc, lvl, lvl->buffer, &w, &h);
             } else {
@@ -334,8 +336,8 @@ void __fastcall DownloadTexture(__GLcontext *gc, __GLtextureFxICD *tex, GLuint t
             data = ReplicateAspectTexels(gc, lvl, lvl->buffer, &w, &h);
             fmt = 0x12;                                 /* GR_TEXFMT_ARGB_8888 (g3ext.h): the uncompressed copy */
         } else {
-            data = lvl->compressedImage;        /* the FXT1 image (6903c770 allocates it) */
-            h = (lvl->height + 3) & ~3;                 /* whole 4-row FXT1 blocks */
+            data = lvl->compressedImage;        /* the FXT1 / DXT image (6903c770 allocates it) */
+            h = (lvl->height + 3) & ~3;                 /* whole 4-row blocks */
             fmt = info->grFormat;
         }
         hwTexDownloadLevel(gc, tex, tmu, level, fmt, data, 0, h - 1);
@@ -447,13 +449,13 @@ GLboolean __fastcall MakeResidentTryAllocateSurface(__GLcontext *gc, __GLtexture
         desc.ddpfPixelFormat.dwRBitMask = 0xf800;
         desc.ddpfPixelFormat.dwGBitMask = 0x7e0;
         desc.ddpfPixelFormat.dwBBitMask = 0x1f;
-    } else if (desc.ddpfPixelFormat.dwRGBBitCount == 8) {
+    } else if (desc.ddpfPixelFormat.dwRGBBitCount == 8 && !TEXCMP_GR_DXT(tex->format)) {
         desc.ddpfPixelFormat.dwFlags = DDPF_RGB | DDPF_PALETTEINDEXED8;
         desc.ddpfPixelFormat.dwRBitMask = 0;
         desc.ddpfPixelFormat.dwGBitMask = 0;
         desc.ddpfPixelFormat.dwBBitMask = 0;
-    } else if (desc.ddpfPixelFormat.dwRGBBitCount == 4) {     /* compressed: a RAW8 FOURCC surface */
-        desc.dwWidth >>= 2;
+    } else if (desc.ddpfPixelFormat.dwRGBBitCount == 4 || TEXCMP_GR_DXT(tex->format)) {  /* compressed: a RAW8 FOURCC surface */
+        desc.dwWidth >>= desc.ddpfPixelFormat.dwRGBBitCount == 4 ? 2 : 1;       /* (DXT3 / 5: 8 bits per texel) */
         desc.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_VIDEOMEMORY;
         desc.ddpfPixelFormat.dwFourCC = MAKEFOURCC('R', 'A', 'W', '8');
         desc.ddpfPixelFormat.dwFlags = DDPF_FOURCC;
@@ -518,6 +520,7 @@ GLint __fastcall __glSSTAllocateTextureMemory(__GLcontext *gc, __GLtextureFxICD 
             if (left <= 0)
                 goto done;
             if (b->tex) {
+                ICD_TEXEVICT();
                 b->tex->mem[__GL_TMU_SLOT(tmu)] = NULL;
                 b->tex->onTmu[__GL_TMU_SLOT(tmu)] = 0;
                 b->tex->t.hwHandle[__GL_TMU_SLOT(tmu)] = 0;
@@ -528,8 +531,10 @@ GLint __fastcall __glSSTAllocateTextureMemory(__GLcontext *gc, __GLtextureFxICD 
             if (b != blk)
                 texMgrCoalesce(gc, blk, tmu);
         }
-        if (left > 0)
+        if (left > 0) {
+            ICD_TEXFAIL();
             return 0;
+        }
     }
 done:
     blk->tex = tex;
@@ -570,8 +575,8 @@ void *__fastcall __glSSTTexCreateLevel(__GLcontext *gc, __GLtextureFxICD *tex, G
 
     r = __glTextureCreateLevel(gc, &tex->t, level, ifmt, w, h, a5, a6, a7);
     if (r != NULL) {
-        if (ifmt == 0x86b0 || ifmt == 0x86b1 || (ifmt >= 0x83a0 && ifmt <= 0x83a3)) {   /* FXT1 RGB / RGBA; the four S3TC formats are stored as FXT1 */
-            tex->t.level[level]->compressedSize = txTexCalcMapSize(w, h, 0x11);
+        if (TEXCMP_INTERNAL(ifmt)) {                    /* FXT1, or S3TC in its DXT format: the compressed image */
+            tex->t.level[level]->compressedSize = txTexCalcMapSize(w, h, tex->t.level[level]->texFormat->grFormat);
             tex->t.level[level]->compressedImage = __GL_MALLOC(gc, tex->t.level[level]->compressedSize);
             if (tex->t.level[level]->compressedImage == NULL)
                 return 0;
@@ -588,7 +593,7 @@ void *__fastcall __glSSTTexCreateLevel(__GLcontext *gc, __GLtextureFxICD *tex, G
             d = lv[0]->widthLog2 - lv[0]->heightLog2;
             if (abs(d) > 3) {
                 tex->wideAspect = 1;
-                if (IS_FXT1_FORMAT(fi))
+                if (IS_CMP_FORMAT(fi))
                     tex->format = 0x12;                 /* GR_TEXFMT_ARGB_8888 (g3ext.h): replicated uncompressed */
             }
             if (d > 3)

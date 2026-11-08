@@ -89,6 +89,9 @@ GLenum __fastcall __glSSTCheckColorTableArgs(__GLcontext *gc, GLenum target, GLe
       case GL_RGBA16:
       case 0x83a2:                          /* GL_RGBA_S3TC, GL_RGBA4_S3TC */
       case 0x83a3:
+      case 0x83f1:                          /* GL_COMPRESSED_RGBA_S3TC_DXT1 / 3 / 5_EXT */
+      case 0x83f2:
+      case 0x83f3:
       case 0x86b1:
         baseFormat = GL_RGBA;
         break;
@@ -102,6 +105,7 @@ GLenum __fastcall __glSSTCheckColorTableArgs(__GLcontext *gc, GLenum target, GLe
       case GL_RGB16:
       case 0x83a0:                          /* GL_RGB_S3TC, GL_RGB4_S3TC */
       case 0x83a1:
+      case 0x83f0:                          /* GL_COMPRESSED_RGB_S3TC_DXT1_EXT */
       case 0x86b0:
         baseFormat = GL_RGB;
         break;
@@ -230,6 +234,9 @@ void __fastcall AllocColorTable(__GLcolorTableICD *ct, GLenum target, GLenum int
       case GL_RGBA16:
       case 0x83a2:                          /* GL_RGBA_S3TC, GL_RGBA4_S3TC */
       case 0x83a3:
+      case 0x83f1:                          /* GL_COMPRESSED_RGBA_S3TC_DXT1 / 3 / 5_EXT */
+      case 0x83f2:
+      case 0x83f3:
       case 0x86b1:
         ct->redSize = 8;
         ct->greenSize = 8;
@@ -251,6 +258,7 @@ void __fastcall AllocColorTable(__GLcolorTableICD *ct, GLenum target, GLenum int
       case GL_RGB16:
       case 0x83a0:                          /* GL_RGB_S3TC, GL_RGB4_S3TC */
       case 0x83a1:
+      case 0x83f0:                          /* GL_COMPRESSED_RGB_S3TC_DXT1_EXT */
       case 0x86b0:
         ct->redSize = 8;
         ct->greenSize = 8;

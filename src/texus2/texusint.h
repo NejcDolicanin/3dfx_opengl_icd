@@ -69,6 +69,7 @@ void    txViewClose();
 int             txLog2(int n);
 int     txFloorPow2(int n);
 int             txCeilPow2(int n);
+FxU32   txRand(FxU32 *state);          /* private generator: the encoders never touch the CRT's rand() */
 int     txGCD(int a, int b);
 int             txAspectRatio(int w, int h);
 void    txPanic(char *);

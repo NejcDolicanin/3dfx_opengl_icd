@@ -18,8 +18,7 @@
 #define __GL_TEXTURE_INDEX_1D           0
 #define __GL_TEXTURE_INDEX_2D           1
 
-#define GL_COMPRESSED_RGB_FXT1_3DFX     0x86b0
-#define GL_COMPRESSED_RGBA_FXT1_3DFX    0x86b1
+#include "texcmp.h"
 
 /* vertex.h: the clip-code half of flagBits (__GL_CLIP_SHIFT 16; the ICD tests every bit) */
 
@@ -189,7 +188,7 @@ __GLtextureICD *__fastcall __glCheckTexImage2DArgs(__GLcontext *gc, GLenum targe
 
 /* 6909e9b0 -- __glCheckCompressedTexImage2DArgs: the glCompressedTexImage2DARB argument check: the active
 ** unit's texture of the
-** target, an FXT1 internal format and legal sizes */
+** target, a compressed (FXT1 / S3TC) internal format and legal sizes */
 __GLtextureICD *__fastcall __glCheckCompressedTexImage2DArgs(__GLcontext *gc, GLenum target, GLint lod, GLint internalformat,
 					 GLsizei w, GLsizei h, GLint border)
 {
@@ -200,7 +199,7 @@ __GLtextureICD *__fastcall __glCheckCompressedTexImage2DArgs(__GLcontext *gc, GL
 	__glSetError(GL_INVALID_ENUM);
 	return 0;
     }
-    if (internalformat < GL_COMPRESSED_RGB_FXT1_3DFX || internalformat > GL_COMPRESSED_RGBA_FXT1_3DFX) {
+    if (!TEXCMP_INTERNAL(internalformat)) {
 	__glSetError(GL_INVALID_VALUE);
     } else if (IsLegalRange(gc, w, border)) {
 	return IsLegalRange(gc, h, border) ? tex : 0;

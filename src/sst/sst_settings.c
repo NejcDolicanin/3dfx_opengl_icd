@@ -253,6 +253,7 @@ void __fastcall hwBuildGetStrings(__GLcontext *gc)
             s = REGSTR(gc, "FX_GL_COMPRESS_LEGACY_TEXTURES");
             if (s == NULL || *s != '0')
                 q += sprintf(q, "GL_S3_s3tc ");
+            q += sprintf(q, "GL_EXT_texture_compression_s3tc ");
             q += sprintf(q, "GL_ARB_texture_compression ");
             q += sprintf(q, "GL_3DFX_texture_compression_FXT1 ");
         } else {

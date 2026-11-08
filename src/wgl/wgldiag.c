@@ -313,10 +313,31 @@ static void icdCapDump(void)
     icdTrace("  calls + records", s_capN);
 }
 
+DWORD g_icdTexDlN[32], g_icdTexDlBytes[32], g_icdTexEvict, g_icdTexAllocFail;
+static DWORD s_swapN;
+
+/* every 256 swaps: texture downloads since the last print, per Glide format (count, bytes), evictions, failures */
+static void icdTraceTexStats(void)
+{
+    DWORD f, n = 0;
+    for (f = 0; f < 32; f++) n += g_icdTexDlN[f];
+    if (n == 0 && g_icdTexEvict == 0) return;
+    icdTrace("tex stats at swap", s_swapN);
+    for (f = 0; f < 32; f++) {
+        if (g_icdTexDlN[f] == 0) continue;
+        icdTrace("  downloads fmt (fmt<<24 | count)", (f << 24) | g_icdTexDlN[f]);
+        icdTrace("    bytes", g_icdTexDlBytes[f]);
+        g_icdTexDlN[f] = g_icdTexDlBytes[f] = 0;
+    }
+    icdTrace("  evictions", g_icdTexEvict); icdTrace("  allocation failures", g_icdTexAllocFail);
+    g_icdTexEvict = g_icdTexAllocFail = 0;
+}
+
 /* at each DrvSwapBuffers: finish a running capture; a Scroll Lock toggle starts the next one */
 void icdTraceSwap(void)
 {
     int key = GetKeyState(VK_SCROLL) & 1;
+    if ((++s_swapN & 255) == 0) icdTraceTexStats();
     if (s_capOn) {
         s_capOn = 0;
         icdCapDump();

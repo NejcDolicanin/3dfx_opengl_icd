@@ -81,29 +81,39 @@ txLog2(int n)
 int
 txFloorPow2(int n)
 {
-        // Find next smallest integer which is also a power of 2.
+        // Largest power of 2 <= n (the original's doubling loop overflowed, and hung, above 2^30).
 
-        int             i;
+        unsigned int    u = (unsigned int) n, p = 1;
 
-        if ((n & (n -1)) == 0) {
-                return n;               // already a power of 2.
+        if (n <= 0 || (n & (n -1)) == 0) {
+                return n;               // 0, or already a power of 2.
         }
 
-        for (i=1; i<= n; i+=i);
-        return i>>1;
+        while ((p << 1) <= u) p <<= 1;  // n < 2^31, so p << 1 cannot wrap
+        return (int) p;
 }
 
 int
 txCeilPow2(int n)
 {
-        // Find next smallest integer which is also a power of 2.
+        // Smallest power of 2 >= n; 2^30 above that (2^31 does not fit an int).
 
-        int             i;
+        unsigned int    u = (unsigned int) n, p = 1;
 
-        if ((n & (n -1)) == 0) return n;                // already a power of 2.
+        if (n <= 0 || (n & (n -1)) == 0) return n;      // 0, or already a power of 2.
 
-        for (i=1; i<= n; i+=i);
-        return i;
+        while (p < u && p < 0x40000000u) p <<= 1;
+        return (int) p;
+}
+
+FxU32
+txRand(FxU32 *state)
+{
+        // 31-bit linear congruential generator (the CRT's constants); the encoders use it so their output
+        // depends only on the input, and the application's rand() sequence stays untouched.
+
+        *state = *state * 1103515245u + 12345u;
+        return (*state >> 16) & 0x7fff;
 }
 
 extern TxErrorCallbackFnc_t _txErrorCallback;

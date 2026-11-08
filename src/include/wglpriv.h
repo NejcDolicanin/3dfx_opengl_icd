@@ -199,7 +199,11 @@ extern LONG g_icdLfbLocks;          /* outstanding grLfbLock()s (lifecycle traci
 void icdTraceArmFilter(void);       /* (re)install the crash logger; DllMain attach and every DrvSwapBuffers */
 #define ICD_ARM()     icdTraceArmFilter()
 void *icdTraceProxy(void *t);       /* the GL capture's proxy proc table for opengl32 */
-void icdTraceSwap(void);            /* per DrvSwapBuffers: Scroll Lock frame capture */
+void icdTraceSwap(void);            /* per DrvSwapBuffers: Scroll Lock frame capture, texture statistics every 256 */
+extern DWORD g_icdTexDlN[32], g_icdTexDlBytes[32], g_icdTexEvict, g_icdTexAllocFail;   /* texture manager counters */
+#define ICD_TEXDL(fmt, bytes) (g_icdTexDlN[(fmt) & 31]++, g_icdTexDlBytes[(fmt) & 31] += (bytes))
+#define ICD_TEXEVICT()        (g_icdTexEvict++)
+#define ICD_TEXFAIL()         (g_icdTexAllocFail++)
 #define ICD_PROXY(t)  icdTraceProxy(t)
 #define ICD_SWAP_HOOK() icdTraceSwap()
 #elif defined(ICD_MARK)
@@ -229,6 +233,11 @@ int __stdcall icdProbeV(DWORD tag, DWORD v);
 #define ICD_ARM()     ((void)0)
 #define ICD_PROXY(t)  (t)
 #define ICD_SWAP_HOOK() ((void)0)
+#endif
+#ifndef ICD_TEXDL
+#define ICD_TEXDL(fmt, bytes) ((void)0)
+#define ICD_TEXEVICT()        ((void)0)
+#define ICD_TEXFAIL()         ((void)0)
 #endif
 #ifndef ICD_LFB
 #define ICD_LFB(n)    ((void)0)

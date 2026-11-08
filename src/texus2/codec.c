@@ -996,6 +996,7 @@ vqChroma(const float in[][3], int ncolors, float colors[][3])
     float   err = 0.0f;
     int     i, j, k;
     int     repeat = MAX_REPEAT;        // iteration limit on outermost loop
+    FxU32   seed = 1;                   // the gamble below: same block, same result
 
 #if STATISTICS
     nvqChroma++;
@@ -1126,7 +1127,7 @@ again:
         for (i=0; i<ncolors; i++) 
             if (counts[i] == 0.0f) break;
 
-        if (i >= ncolors) i = rand() % ncolors;
+        if (i >= ncolors) i = txRand(&seed) % ncolors;
 
 #if 0
         printf("Repeat %d: repl %d [%3.0f %3.0f %3.0f] with [%3.0f %3.0f %3.0f]\n",
@@ -1174,6 +1175,7 @@ vqChromaAlpha(const float in[][3], FxI32 ain[], int ncolors, float colors[][4], 
     float   err = 0.0f;
     int     i, j, k;
     int     repeat = 10;
+    FxU32   seed = 1;           // the gamble below: same block, same result
 
     if ( ncolors > NCOLORS ) // check we have enough space
         txError("FXT1 vqChromaAlpha: invalid number of colors\n");
@@ -1190,15 +1192,19 @@ vqChromaAlpha(const float in[][3], FxI32 ain[], int ncolors, float colors[][4], 
     colors[0][0] = input[ 0][0];
     colors[0][1] = input[ 0][1];
     colors[0][2] = input[ 0][2];
+    colors[0][3] = input[ 0][3];  /* (the original left every alpha uninitialised) */
     colors[1][0] = input[10][0];
     colors[1][1] = input[10][1];
     colors[1][2] = input[10][2];
+    colors[1][3] = input[10][3];
     colors[2][0] = input[16][0];
     colors[2][1] = input[16][1];
     colors[2][2] = input[16][2];
+    colors[2][3] = input[16][3];
     colors[3][0] = input[26][0];  /* wasted if ncolors == 3 */
     colors[3][1] = input[26][1];  /* wasted if ncolors == 3 */
     colors[3][2] = input[26][2];  /* wasted if ncolors == 3 */
+    colors[3][3] = input[26][3];  /* wasted if ncolors == 3 */
 
 again:
     // Here's the vector quantizer:
@@ -1318,7 +1324,7 @@ again:
         for (i=0; i<ncolors; i++) 
             if (counts[i] == 0.0f) break;
 
-        if (i >= ncolors) i = rand() % ncolors;
+        if (i >= ncolors) i = txRand(&seed) % ncolors;
 
 #if 0
         printf("Repeat %d: repl %d [%3.0f %3.0f %3.0f] with [%3.0f %3.0f %3.0f]\n",

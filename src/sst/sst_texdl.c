@@ -9,6 +9,7 @@
 #include "wglpriv.h"
 #include "og.h"
 #include <glide.h>
+#include "texcmp.h"
 
 extern void __cdecl txImgQuantize(void *dst, void *src, int w, int h, GLuint format, GLuint dither);
 extern int a_color_cc, a_force_cc;      /* texus codec.c (FXT1): -1 = no forced colour coding / mode */
@@ -36,7 +37,8 @@ void __fastcall hwTexDownloadRows(GLint tmu, GLuint startAddress, GLint level, G
 }
 
 /* 6903baa0 -- __glSSTCopyTexImage: tex->copyTexImage of the sst texture object: the generic image copy, then a
-** compressed level is (re)built from it with texus (the FXT1 codec's forced modes reset first) */
+** compressed level is (re)built from it: DXT with the ICD's encoder (sst_dxt.c), FXT1 with texus (the FXT1 codec's
+** forced modes reset first) */
 void __fastcall __glSSTCopyTexImage(__GLcontext *gc, void *spanInfo, __GLtextureICD *tex, GLint level)
 {
     __GLmipMapLevelICD *lp;
@@ -46,7 +48,11 @@ void __fastcall __glSSTCopyTexImage(__GLcontext *gc, void *spanInfo, __GLtexture
     a_color_cc = -1;
     (*gc->procs.copyImage)(gc, spanInfo, GL_TRUE);
     if (lp->compressedImage) {
-        txImgQuantize(lp->compressedImage, lp->buffer, lp->width, lp->height,
-                      tex->level[0]->texFormat->grFormat, 0);
+        GLint g = lp->texFormat->grFormat;
+        if (TEXCMP_GR_DXT(g))
+            hwDxtEncode(lp->compressedImage, lp->buffer, lp->width, lp->height, g,
+                        (GLboolean)(lp->texFormat->pixelType != 5));     /* (5 = RGB pixels: nothing to punch through) */
+        else
+            txImgQuantize(lp->compressedImage, lp->buffer, lp->width, lp->height, g, 0);
     }
 }

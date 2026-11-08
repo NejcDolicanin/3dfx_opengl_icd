@@ -12,6 +12,7 @@
 #include <math.h>
 #include "glshade.h"
 #include "icdglob.h"
+#include "texcmp.h"
 #include <stdlib.h>
 #include "og.h"
 
@@ -127,16 +128,10 @@ extern void __stdcall __glim_TexEnviv(GLenum target, GLenum pname, const GLint p
 #define GL_UNSIGNED_SHORT_5_5_5_1       0x8034
 #define GL_UNSIGNED_INT_8_8_8_8         0x8035
 #define GL_UNSIGNED_INT_10_10_10_2      0x8036
-#define GL_RGB_S3TC               0x83a0      /* GL_S3_s3tc: all four are stored as FXT1 (RGB / RGBA) */
-#define GL_RGB4_S3TC              0x83a1
-#define GL_RGBA_S3TC              0x83a2
-#define GL_RGBA4_S3TC             0x83a3
 #define GL_COMPRESSED_ALPHA_ARB         0x84e9
 #define GL_COMPRESSED_LUMINANCE_ARB     0x84ea
 #define GL_COMPRESSED_LUMINANCE_ALPHA_ARB 0x84eb
 #define GL_COMPRESSED_INTENSITY_ARB     0x84ec
-#define GL_COMPRESSED_RGB_FXT1_3DFX     0x86b0
-#define GL_COMPRESSED_RGBA_FXT1_3DFX    0x86b1
 /* s_tex.c sub-image helpers */
 typedef __GLpixelSpanInfoICD __GLpixelSpanInfo;
 typedef void (__fastcall *__GLcopyTexImageProc)(__GLcontext *gc, __GLpixelSpanInfo *spanInfo,
@@ -806,6 +801,7 @@ __GLtextureICD * __fastcall CheckTexImageArgs(__GLcontext *gc, GLenum target, GL
       case GL_RGB10:            case GL_RGB12:
       case GL_RGB16:
       case GL_RGB_S3TC:         case GL_RGB4_S3TC:
+      case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
       case GL_COMPRESSED_RGB_FXT1_3DFX:
         break;
       case GL_RGBA:
@@ -814,6 +810,8 @@ __GLtextureICD * __fastcall CheckTexImageArgs(__GLcontext *gc, GLenum target, GL
       case GL_RGBA16:           case GL_RGB5_A1:
       case GL_RGB10_A2:
       case GL_RGBA_S3TC:        case GL_RGBA4_S3TC:
+      case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT: case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:
+      case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:
       case GL_COMPRESSED_RGBA_FXT1_3DFX:
         break;
       case GL_ALPHA:
@@ -1888,9 +1886,7 @@ void *__fastcall __glTextureCreateLevel(__GLcontext *gc, __GLtextureICD *tex,
     GLint maxDim;
     GLint compressed;
 
-    if (components == GL_COMPRESSED_RGB_FXT1_3DFX ||
-        components == GL_COMPRESSED_RGBA_FXT1_3DFX ||
-        (components >= GL_RGB_S3TC && components <= GL_RGBA4_S3TC)) {
+    if (TEXCMP_INTERNAL(components)) {
         compressed = 1;
     } else {
         compressed = 0;
@@ -3040,6 +3036,7 @@ const void * __fastcall __glLookupTextureFormat(GLuint ecx_, const GLenum compon
     case 0x86b0:    /* GL_COMPRESSED_RGB_FXT1_3DFX */
     case GL_RGB_S3TC:
     case GL_RGB4_S3TC:
+    case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
         *baseFormat = GL_RGB;
         return &__glTexFormatRGB8;
     case 4:
@@ -3053,6 +3050,9 @@ const void * __fastcall __glLookupTextureFormat(GLuint ecx_, const GLenum compon
     case GL_RGB10_A2:
     case GL_RGBA_S3TC:
     case GL_RGBA4_S3TC:
+    case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
+    case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:
+    case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:
     case 0x86b1:    /* GL_COMPRESSED_RGBA_FXT1_3DFX */
         *baseFormat = GL_RGBA;
         return &__glTexFormatRGBA8;

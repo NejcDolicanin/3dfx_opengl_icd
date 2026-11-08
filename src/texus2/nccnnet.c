@@ -254,12 +254,6 @@ _nn_initTables()
 }
 
 static  int order[256];
-static int 
-_nn_randomOrder(const void *a, const void *b)
-{
-    a = b;              // no compiler warnings
-    return (rand() % 3) - 1;
-}
 
 static void
 txMapPal256toYAB(FxU32 *YAB, FxU8 *map, int nsamples, FxU32 *samples)
@@ -275,7 +269,13 @@ txMapPal256toYAB(FxU32 *YAB, FxU8 *map, int nsamples, FxU32 *samples)
      * Select a number which is relatively prime to nsamples.
      */
     for (i=0; i<nsamples; i++) order[i] = i;
-    qsort(order, nsamples, sizeof(int), _nn_randomOrder);
+    {   /* shuffle (the original sorted with a random comparator, from the CRT's rand()) */
+        FxU32 seed = 1;
+        for (i=nsamples-1; i>0; i--) {
+            int j = (int) (txRand(&seed) % (FxU32) (i + 1)), t = order[i];
+            order[i] = order[j]; order[j] = t;
+        }
+    }
 
     iterations = drySpells = 0;
     bstMax = 0x7fffffff;

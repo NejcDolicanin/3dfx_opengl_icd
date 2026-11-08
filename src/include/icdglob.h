@@ -54,7 +54,7 @@ extern GLuint g_vtxSizeMasks[9];                       /* gdata.c */
 /* ---- the hardware path's texture formats (sst_tex.c; hwTexelFormat 6904d740 picks one per internal format) */
 extern const __GLtextureFormatICD g_texFmtL8, g_texFmtLA88, g_texFmtRGB332, g_texFmtRGB565, g_texFmtARGB4444, g_texFmtARGB1555,
                                   g_texFmtARGB8888, g_texFmtXRGB8888, g_texFmtA8, g_texFmtI8, g_texFmtP8, g_texFmtFXT1RGBA,
-                                  g_texFmtFXT1RGB;
+                                  g_texFmtFXT1RGB, g_texFmtDXT1RGB, g_texFmtDXT1RGBA, g_texFmtDXT3, g_texFmtDXT5;
 
 /* ---- s_global.c (gl_global.c): the 4x4 dither table as 16 signed chars and as floats, -0.46875 .. 0.46875, and the
 ** six frustum clip planes of the clippers; the float-to-int bias the /Od span code adds, 12582912.0F = 3 << 22

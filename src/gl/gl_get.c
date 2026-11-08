@@ -248,8 +248,7 @@ void __fastcall __glFreePixelState(__GLcontext *gc)
 ** data, +0x0c width, +0x10 height, +0x14 depth, +0x44 border, +0x48 requested format, +0x54 the
 ** level's texel format (bits per texel at +0x20). */
 extern void __cdecl _txImgDequantizeFXT1(GLuint *out, GLuint *in, int w, int h);   /* texus2 dequant.c */
-#define GL_COMPRESSED_RGB_FXT1_3DFX     0x86B0
-#define GL_COMPRESSED_RGBA_FXT1_3DFX    0x86B1
+#include "texcmp.h"
 #define __GL_FLOAT          0
 /* ---- s_get.c ---- */
 #ifndef GL_FOG_COORDINATE_ARRAY_POINTER_EXT
@@ -640,9 +639,7 @@ void __stdcall __glim_GetTexImage(GLenum target, GLint level,
     /* If no texture has been loaded */
     if (!width || !height) return;
 
-    if (lp->requestedFormat != GL_COMPRESSED_RGB_FXT1_3DFX &&
-	lp->requestedFormat != GL_COMPRESSED_RGBA_FXT1_3DFX &&
-	(lp->requestedFormat < 0x83a0 || lp->requestedFormat > 0x83a3)) {     /* the S3TC formats are stored as FXT1 */
+    if (!TEXCMP_INTERNAL(lp->requestedFormat)) {
 	__glInitTexDestPack(gc, &spanInfo, width, height, lp->depth - lp->border*2,
 			    format, type, texels);
 	__glInitTexImageGet(gc, &spanInfo, tex, level);
@@ -651,12 +648,18 @@ void __stdcall __glim_GetTexImage(GLenum target, GLint level,
 	(*gc->procs.fetchTex)(gc, tex, &spanInfo, GL_TRUE);
     } else {
 	void *buffer = lp->buffer;
-	GLint lineLength;
+	GLint lineLength, grFmt = lp->texFormat->grFormat;
 
-	lp->buffer = __GL_MALLOC(gc,
-	    ((lp->texFormat->bitsPerTexel + 7) >> 3) * ((width + 7) & ~7) * ((height + 3) & ~3) + 1);
-	_txImgDequantizeFXT1(lp->buffer, lp->compressedImage, (width + 7) & ~7, (height + 3) & ~3);
-	lineLength = (width + 7) & ~7;
+	if (TEXCMP_GR_DXT(grFmt)) {                             /* S3TC: decoded from its DXT blocks (sst_dxt.c) */
+	    lp->buffer = __GL_MALLOC(gc, ((lp->texFormat->bitsPerTexel + 7) >> 3) * width * height + 1);
+	    hwDxtDecode(lp->buffer, lp->compressedImage, width, height, grFmt);
+	    lineLength = width;
+	} else {
+	    lp->buffer = __GL_MALLOC(gc,
+		((lp->texFormat->bitsPerTexel + 7) >> 3) * ((width + 7) & ~7) * ((height + 3) & ~3) + 1);
+	    _txImgDequantizeFXT1(lp->buffer, lp->compressedImage, (width + 7) & ~7, (height + 3) & ~3);
+	    lineLength = (width + 7) & ~7;
+	}
 	__glInitTexDestPack(gc, &spanInfo, width, height, lp->depth - lp->border*2,
 			    format, type, texels);
 	__glInitTexImageGet(gc, &spanInfo, tex, level);
