@@ -1324,7 +1324,9 @@ typedef struct __GLhwcxICDRec {
     GLuint      growBufACap;                /* 0x38510  at least 0x400 */
     void       *growBufB;                   /* 0x38514 */
     GLuint      growBufBCap;                /* 0x38518 */
-    GLuint      raw_3851c[(0x38528 - 0x3851c) / 4];
+    GLuint      stripKind;                  /* 0x3851c  the open FIFO strip of the immediate-mode triangles (hwFifoStripTri):
+                                                 0 none, 1 strip, 2 fan */
+    __GLvertexICD *stripA, *stripB;         /* 0x38520  the two vertices of it the next triangle must share */
 } __GLhwcxICD;
 /* hwcx.genCode[] slots: the generated routines (called with `call [slot]` from other generated code) */
 #define __GL_GEN_CLIP_EDGE          0   /* clip one edge against a plane (6903cb50 x87 / 6903dc40 SSE / 6903eb40 3DNow) */

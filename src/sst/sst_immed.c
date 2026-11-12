@@ -237,6 +237,7 @@ void __stdcall __glsstim_Begin(GLenum mode)
         return;
     }
     gc->beginMode = 1;
+    gc->hwcx.stripKind = 0;             /* no FIFO strip is open (hwFifoStripTri) */
     (*gc->procs.beginPrim[mode])(gc);
 }
 

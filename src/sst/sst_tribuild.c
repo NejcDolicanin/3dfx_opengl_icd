@@ -122,6 +122,8 @@ GLubyte *__fastcall hwGenClipTriangle(__GLcontext *gc, GLubyte *pc)
     }
     /* culled when the face of the sign is the cull face */
     EMIT(og_mov(gc, R(eax), MEMR(-4, esp)));
+    EMIT(og_test(gc, R(eax), IMM(0x7fffffff)));           /* a zero-area triangle draws nothing: dropped, as Glide's own */
+    EMIT(og_je(gc, done));
     EMIT(og_shr(gc, R(eax), IMM(0x1f)));
     EMIT(og_xor(gc, R(eax), IMM(1)));
     EMIT(og_movzx8(gc, R(al), MEMR(&gc->polygon.face[0], eax)));
@@ -292,6 +294,8 @@ GLubyte *__fastcall hwBuildTriangleProc(__GLcontext *gc)
         EMIT(og_mov(gc, MEM(&gc->hwcx.genConst[0]), R(eax)));
         EMIT(og_mov(gc, MEM(&gc->hwcx.genConst[1]), R(ebx)));
         EMIT(og_mov(gc, R(eax), MEMR(-4, esp)));
+        EMIT(og_test(gc, R(eax), IMM(0x7fffffff)));           /* a zero-area triangle draws nothing: dropped, as Glide's own */
+        EMIT(og_je(gc, done));
         EMIT(og_shr(gc, R(eax), IMM(0x1f)));
         EMIT(og_xor(gc, R(eax), IMM(1)));
         EMIT(og_movzx8(gc, R(al), MEMR(&gc->polygon.face[0], eax)));
@@ -508,6 +512,8 @@ GLubyte *__fastcall hwBuildIndexedTriangles(__GLcontext *gc, int unused)
         EMIT(og_mov(gc, MEM(&blk->saveA), R(eax)));
         EMIT(og_mov(gc, MEM(&blk->saveB), R(ebx)));
         EMIT(og_mov(gc, R(eax), MEMR(-4, esp)));
+        EMIT(og_test(gc, R(eax), IMM(0x7fffffff)));           /* a zero-area triangle draws nothing: dropped, as Glide's own */
+        EMIT(og_je(gc, culled));
         EMIT(og_shr(gc, R(eax), IMM(0x1f)));
         EMIT(og_xor(gc, R(eax), IMM(1)));
         EMIT(og_movzx8(gc, R(al), MEMR(&gc->polygon.face[0], eax)));
@@ -559,6 +565,7 @@ GLubyte *__fastcall hwBuildIndexedTriangles(__GLcontext *gc, int unused)
     if (gc->state.enables.general & __GL_POLYGON_OFFSET_ANY_ENABLE) {
         EMIT(og_mov(gc, R(edx), MEMR(-4, esp)));
         EMIT(og_call(gc, MEM(&gc->hwcx.genProcs9[0])));
+        EMIT(og_or(gc, R(esi), IMM(2)));                                /* offset in the vertices' z: no strips */
     }
     EMIT(og_test(gc, R(esi), IMM(2)));
     EMIT(og_je(gc, second));

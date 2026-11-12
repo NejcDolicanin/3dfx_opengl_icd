@@ -890,6 +890,7 @@ GLubyte *__fastcall og_genBegin(__GLcontext *gc, GLubyte *pc)
     EMIT(og_mov(gc, R(edx), IMM(gc->hwcx.stagingBase)));
     EMIT(og_mov(gc, MEM(&gc->hwcx.immVertex), R(edx)));
     EMIT(og_mov(gc, MEM(&gc->hwcx.hwPrim), R(eax)));
+    EMIT(og_mov(gc, MEM(&gc->hwcx.stripKind), IMM(0)));            /* no FIFO strip is open (hwFifoStripTri) */
     EMIT(og_mov(gc, R(ecx), TAB(g_hwPrimDescByMode, eax)));
     EMIT(og_mov(gc, MEM(&gc->hwcx.hwPrimDesc), R(ecx)));
     EMIT(og_mov(gc, R(edx), TAB(g_immProcClassByMode, eax)));

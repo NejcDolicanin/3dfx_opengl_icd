@@ -141,7 +141,11 @@ void __fastcall og_genRenderPrim(__GLcontext *gc, GLubyte *pc, GLuint prim, char
             EMIT(og_mov(gc, MEM(&gc->hwcx.genConst[1]), R(eax)));
             EMIT(og_mov(gc, MEM(&gc->hwcx.genConst[2]), R(ebx)));
             EMIT(og_mov(gc, R(eax), MEM(&gc->hwcx.genConst[0])));
-            EMIT(og_shr(gc, R(eax), IMM(0x1f)));
+                        if (prim == 2) {
+                EMIT(og_test(gc, R(eax), IMM(0x7fffffff)));           /* a zero-area triangle draws nothing: dropped, as Glide's own */
+                EMIT(og_je(gc, skip));
+            }
+EMIT(og_shr(gc, R(eax), IMM(0x1f)));
             EMIT(og_xor(gc, R(eax), IMM(1)));
             EMIT(og_movzx8(gc, R(al), og_mem(gc, IMM(&gc->polygon.face[0]), R(eax), NULL, 1)));
             EMIT(og_movzx8(gc, R(bl), MEM(&gc->polygon.cullFace)));
@@ -201,6 +205,10 @@ void __fastcall og_genRenderPrim(__GLcontext *gc, GLubyte *pc, GLuint prim, char
             EMIT(og_test(gc, R(edx), IMM(__GL_POLYGON_OFFSET_FILL_ENABLE)));
             EMIT(og_je(gc, noOffset));
             EMIT(og_mov(gc, R(edx), MEM(&gc->hwcx.genConst[0])));
+            EMIT(og_push(gc, R(eax)));                                  /* the fourth vertex (the pushed eax) */
+            EMIT(og_mov(gc, R(eax), MEMR(4, esp)));                     /* for hwOffsetApply */
+            EMIT(og_mov(gc, MEM(&g_hwOffsetV3), R(eax)));
+            EMIT(og_pop(gc, R(eax)));
             EMIT(og_call(gc, MEM(&gc->hwcx.genProcs9[0])));
             LABEL(noOffset);
             EMIT(og_pop(gc, R(eax)));
@@ -253,7 +261,7 @@ void __fastcall og_genRenderPrim(__GLcontext *gc, GLubyte *pc, GLuint prim, char
             EMIT(og_pop(gc, R(ecx)));
             EMIT(og_pop(gc, R(edx)));
             EMIT(og_push(gc, R(ebx)));
-            EMIT(og_call(gc, MEM(&gc->hwcx.drawTri)));
+            pc = og_callAbs(gc, pc, (GLuint)hwFifoStripTri);         /* strips / fans, else hwcx.drawTri */
             EMIT(og_push(gc, R(edx)));
             EMIT(og_push(gc, R(eax)));
             EMIT(og_mov(gc, R(edx), MEM(&gc->state.enables.general)));
@@ -301,6 +309,8 @@ void __fastcall og_genRenderPrim(__GLcontext *gc, GLubyte *pc, GLuint prim, char
         }
     }
     LABEL(skip);
+    if (prim == 2 && gc->hwcx.cmdTransportInfo != 0)
+        EMIT(og_mov(gc, MEM(&gc->hwcx.stripKind), IMM(0)));         /* a culled triangle ends the FIFO strip */
     EMIT(og_pop(gc, R(ebx)));
     EMIT(og_pop(gc, R(esi)));
     EMIT(og_pop(gc, R(edi)));
@@ -309,6 +319,8 @@ void __fastcall og_genRenderPrim(__GLcontext *gc, GLubyte *pc, GLuint prim, char
 
     /* clipped: the and of the clip codes; all out -> nothing, else the clip routine */
     LABEL(clipped);
+    if (prim == 2 && gc->hwcx.cmdTransportInfo != 0)
+        EMIT(og_mov(gc, MEM(&gc->hwcx.stripKind), IMM(0)));         /* a clipped one too: its pieces are own packets */
     if (prim != 0) {
         EMIT(og_mov(gc, R(esi), MEMR(VX_FLAGBITS, edx)));
         switch (prim) {

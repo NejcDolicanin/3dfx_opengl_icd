@@ -18,6 +18,10 @@ GLint __fastcall grGetInteger(GLint pname);    /* sst_padding.c */
 GLubyte *__fastcall hwPageCacheInsert(__GLcontext *gc, __GLhwBufRecICD *rec, const void *key, void *outBlock);    /* sst_codebuf.c: the code page; *outBlock = the data page */
 void __fastcall hwFlushGrState(__GLcontext *gc, GLuint edx_unused);
 void __fastcall og_genOffsetFifo(__GLcontext *gc);
+void __cdecl hwOffsetApply(__GLcontext *gc, GLuint areaBits, __GLvertexICD *a, __GLvertexICD *b, __GLvertexICD *c);   /* sst_render.c */
+void __cdecl hwOffsetApplyIdx(__GLcontext *gc, GLuint areaBits, GLint ia, GLint ib, GLint ic);
+void __cdecl hwOffsetUndo(__GLcontext *gc);
+extern __GLvertexICD *g_hwOffsetV3;                                /* the quad tail's fourth vertex for hwOffsetApply */
 void __fastcall hwBuildFifoTriProcs(__GLcontext *gc);
 GLboolean __fastcall texMgrReset(__GLcontext *gc, __GLtexMgrFxICD *m);
 GLubyte *__fastcall og_callRel32Gen(__GLcontext *gc, GLubyte *pc, GLuint routine);
@@ -833,6 +837,7 @@ void __fastcall __glSSTInitDepth(__GLdepthBufferICD *fb, __GLcontext *gc);
 GLboolean __fastcall hwGlideInit(void);
 GLboolean __fastcall hwHasPixextExt(void);
 const char *__fastcall hwRegOrEnvString(const char *name);
+void __fastcall hwFifoStripTri(__GLvertexICD *a, __GLvertexICD *b, __GLvertexICD *c);  /* the FIFO strip / fan triangle */
 GLboolean __fastcall hwHasSurfaceExt(void);
 void __fastcall hwUpdateClipRegion(void);
 /* sst/sst_grstate.c */

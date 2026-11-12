@@ -307,6 +307,8 @@ void __fastcall hwReadTrilinearMode(__GLcontext *gc)
   else gc->fx.trilinearMode = 0;
   if (gc->fx.trilinearMode == 2 && (gc->hwcx.numTMU != 2 || !gc->hwcx.hasTexUMA))
       gc->fx.trilinearMode = 1;
+  ICD_T("FX_GL_TRILINEAR_ENABLED mode (2 = split TMUs, one texture unit)", gc->fx.trilinearMode);
+  ICD_T("  hardware TMUs", gc->hwcx.numTMU);
 }
 
 /* 6902a81e -- hwReadPerfSettings (size 232): FX_GL_SUPER, FX_GL_MIN_VERTEX_STRIDE (pending buffers) and FX_GL_HSR */

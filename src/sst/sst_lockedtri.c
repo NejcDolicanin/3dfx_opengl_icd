@@ -725,7 +725,9 @@ void __fastcall hwGenLockedTriangles(__GLcontext *gc)
         EMIT(og_mov(gc, MEM(&blk->xyzw[0][0]), R(eax)));
         EMIT(og_mov(gc, MEM(&blk->xyzw[0][1]), R(ebx)));
         EMIT(og_mov(gc, R(eax), MEM(&blk->area)));
-        EMIT(og_shr(gc, R(eax), IMM(0x1f)));
+                EMIT(og_test(gc, R(eax), IMM(0x7fffffff)));           /* a zero-area triangle draws nothing: dropped, as Glide's own */
+        EMIT(og_je(gc, nextTri));
+EMIT(og_shr(gc, R(eax), IMM(0x1f)));
         EMIT(og_xor(gc, R(eax), IMM(1)));
         EMIT(og_movzx8(gc, R(al), MEMR(&gc->polygon.face[0], eax)));
         EMIT(og_movzx8(gc, R(bl), MEM(&gc->polygon.cullFace)));
@@ -771,6 +773,8 @@ void __fastcall hwGenLockedTriangles(__GLcontext *gc)
     EMIT(og_sbb(gc, R(eax), R(eax)));
     EMIT(og_and(gc, R(eax), IMM(2)));
     EMIT(og_or(gc, R(ebp), R(eax)));
+    if (gc->state.enables.general & __GL_POLYGON_OFFSET_ANY_ENABLE)
+        EMIT(og_or(gc, R(ebp), IMM(2)));                                /* offset in the vertices' z: no strips */
     EMIT(og_mov(gc, R(eax), MEM0(esi)));
     EMIT(og_mov(gc, R(ebx), MEMR(4, esi)));
     EMIT(og_mov(gc, MEM(&blk->prev[2]), R(eax)));

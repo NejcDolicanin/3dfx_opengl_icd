@@ -731,6 +731,7 @@ void __fastcall hwBeginSpritePoints(__GLcontext *gc)
 #define PKT3_HDR_TRIANGLE   0x100000c3      /* independent triangles, 3 vertices */
 #define PKT3_HDR_STRIP3     0x100000cb      /* start a new strip, 3 vertices */
 #define PKT3_HDR_CONTINUE1  0x10000053      /* continue the strip, 1 vertex */
+#define PKT3_SMODE_FAN      0x00400000      /* setup mode bit 0 (header bit 22): the strip is a fan (Glide's kSetupFan) */
 #define FIFO_MAKEROOM_TRI(fifo, n, line) \
     if ((fifo)->fifoRoom < (n)) \
         ((void (__stdcall *)(GLint, const char *, GLint))gc->hwcx.grCommandTransportMakeRoomExt2)((n), ".\\ssttri.c", (line))
@@ -760,9 +761,10 @@ void __fastcall hwFifoDrawTriangle(__GLcontext *gc, __GLvertexICD *a, __GLvertex
     }
 }
 
-/* 69060c6b -- hwFifoBeginStrip: start a new triangle strip in Glide's command FIFO with the triangle a, b, c (one
-** packet 3; hwFifoStripVertex adds vertices to it); ToDo UNUSED CODE: nothing in the driver calls it */
-void __fastcall hwFifoBeginStrip(__GLcontext *gc, __GLvertexICD *a, __GLvertexICD *b, __GLvertexICD *c)
+/* 69060c6b -- hwFifoBeginStrip: start a new triangle strip (fan: a is its centre) in Glide's command FIFO with the
+** triangle a, b, c (one packet 3; hwFifoStripVertex adds vertices to it).  Unused by the original; hwFifoStripTri
+** calls it */
+static void __fastcall hwFifoBeginStrip(__GLcontext *gc, __GLvertexICD *a, __GLvertexICD *b, __GLvertexICD *c, GLboolean fan)
 {
     GrCmdTransportInfo *fifo = gc->hwcx.cmdTransportInfo;
     GLuint params, hdr;
@@ -771,7 +773,7 @@ void __fastcall hwFifoBeginStrip(__GLcontext *gc, __GLvertexICD *a, __GLvertexIC
 
     if (**fifo->ptrLostContext == 0) {
         PKT3_PARAMS(gc, params, vertexSize);
-        hdr = (params << 10) | PKT3_HDR_STRIP3;
+        hdr = (params << 10) | PKT3_HDR_STRIP3 | (fan ? PKT3_SMODE_FAN : 0);
         size = (vertexSize + 4) * 3 + 4;
         FIFO_MAKEROOM_TRI(fifo, size, 0x16a);
         fifo->fifoRoom -= size;
@@ -784,9 +786,9 @@ void __fastcall hwFifoBeginStrip(__GLcontext *gc, __GLvertexICD *a, __GLvertexIC
     }
 }
 
-/* 69060fcb -- hwFifoStripVertex: continue the triangle strip in Glide's command FIFO with the vertex v (one packet
-** 3); ToDo UNUSED CODE: nothing in the driver calls it */
-void __fastcall hwFifoStripVertex(__GLcontext *gc, __GLvertexICD *v)
+/* 69060fcb -- hwFifoStripVertex: continue the triangle strip (or fan) in Glide's command FIFO with the vertex v (one
+** packet 3).  Unused by the original; hwFifoStripTri calls it */
+static void __fastcall hwFifoStripVertex(__GLcontext *gc, __GLvertexICD *v, GLboolean fan)
 {
     GrCmdTransportInfo *fifo = gc->hwcx.cmdTransportInfo;
     GLuint params, hdr;
@@ -795,7 +797,7 @@ void __fastcall hwFifoStripVertex(__GLcontext *gc, __GLvertexICD *v)
 
     if (**fifo->ptrLostContext == 0) {
         PKT3_PARAMS(gc, params, vertexSize);
-        hdr = (params << 10) | PKT3_HDR_CONTINUE1;
+        hdr = (params << 10) | PKT3_HDR_CONTINUE1 | (fan ? PKT3_SMODE_FAN : 0);
         size = vertexSize + 4 + 4;
         FIFO_MAKEROOM_TRI(fifo, size, 0x227);
         fifo->fifoRoom -= size;
@@ -806,7 +808,70 @@ void __fastcall hwFifoStripVertex(__GLcontext *gc, __GLvertexICD *v)
     }
 }
 
-extern void __fastcall hwPolygonOffset(__GLcontext *gc, __GLfloat area, __GLvertexICD *a, __GLvertexICD *b, __GLvertexICD *c, __GLfloat dxAC, __GLfloat dxBC, __GLfloat dyAC, __GLfloat dyBC);
+typedef void (__fastcall *__GLdrawTriFn)(__GLvertexICD *a, __GLvertexICD *b, __GLvertexICD *c);
+
+/* hwFifoStripTri: the immediate-mode triangle of the direct-FIFO path (og_genRenderPrim, prim 2, in place of
+** hwcx.drawTri; a, b, c as its ecx, edx, stack).  In GL_TRIANGLE_STRIP the triangle continues the open hardware strip
+** with its newest vertex when it follows the triangle sent last, in GL_TRIANGLE_FAN / GL_POLYGON the open fan; else it
+** starts a new strip / fan with all three.  Other modes, flat shading with unequal vertex colours (shared vertices
+** cannot carry a colour per triangle) and a vertex set that is not the staging state's go through hwcx.drawTri as
+** before.  The staging roles come from the next descriptor state (hwPrimDesc, advanced before the draw): its slot is
+** where the next vertex goes, so in a strip (slots 0, 1, 2 in turn) the newest vertex is two slots back and the
+** middle one one slot back; in a fan (slots 1, 2 in turn, the centre in 0) the newest is the other non-centre slot.
+** og_genRenderPrim clears stripKind for culled and clipped triangles and glBegin clears it, so a continuation always
+** follows the triangle sent last.  The chip does no culling here (setup mode 0), so the vertex order only has to be
+** the strip's. */
+void __fastcall hwFifoStripTri(__GLvertexICD *a, __GLvertexICD *b, __GLvertexICD *c)
+{
+    __GLcontext *gc = __glCurrentGC();
+    __GLvertexICD **sv = gc->hwcx.stagingVtx;
+    __GLvertexICD *s0, *s1, *n;
+    GLuint kind, slot;
+
+    slot = ((__GLhwPrimDesc *)gc->hwcx.hwPrimDesc)->flags & 3;
+    switch (gc->hwcx.hwPrim) {
+    case GL_TRIANGLE_STRIP:
+        kind = 1;
+        s0 = sv[slot];
+        s1 = sv[slot == 2 ? 0 : slot + 1];
+        n = sv[slot == 0 ? 2 : slot - 1];
+        break;
+    case GL_TRIANGLE_FAN:
+    case GL_POLYGON:
+        kind = 2;
+        s0 = sv[0];
+        s1 = sv[slot];
+        n = sv[3 - slot];
+        break;
+    default:
+        kind = 0;
+        break;
+    }
+    if (gc->state.enables.general & __GL_POLYGON_OFFSET_FILL_ENABLE)
+        kind = 0;                       /* the offset is per triangle, in the vertices' z: no shared vertices */
+    if (kind != 0) {
+        if ((a != s0 && a != s1 && a != n) || (b != s0 && b != s1 && b != n) || (c != s0 && c != s1 && c != n))
+            kind = 0;
+        else if (gc->state.light.shadingModel != GL_SMOOTH &&
+                 (s0->packedColor != b->packedColor || s1->packedColor != b->packedColor ||
+                  n->packedColor != b->packedColor))
+            kind = 0;           /* flat: b is the provoking vertex, drawTri gives its colour to all three */
+    }
+    if (kind == 0) {
+        gc->hwcx.stripKind = 0;
+        (*(__GLdrawTriFn)gc->hwcx.drawTri)(a, b, c);
+        return;
+    }
+    if (gc->hwcx.stripKind == kind && gc->hwcx.stripA == s0 && gc->hwcx.stripB == s1)
+        hwFifoStripVertex(gc, n, (GLboolean)(kind == 2));
+    else
+        hwFifoBeginStrip(gc, s0, s1, n, (GLboolean)(kind == 2));
+    gc->hwcx.stripKind = kind;
+    gc->hwcx.stripA = (kind == 1) ? s1 : s0;      /* a strip goes on from its last two, a fan from centre and last */
+    gc->hwcx.stripB = n;
+}
+
+extern __GLfloat __fastcall hwPolygonOffset(__GLcontext *gc, __GLfloat area, __GLvertexICD *a, __GLvertexICD *b, __GLvertexICD *c, __GLfloat dxAC, __GLfloat dxBC, __GLfloat dyAC, __GLfloat dyBC);
 /* 69061180 (size 917) -- __glSSTRenderTriangle: __glRenderTriangle */
 void __fastcall __glSSTRenderTriangle(__GLcontext *gc, __GLvertexICD *a, __GLvertexICD *b, __GLvertexICD *c)
 {
@@ -816,6 +881,7 @@ void __fastcall __glSSTRenderTriangle(__GLcontext *gc, __GLvertexICD *a, __GLver
     __GLvertexICD *pv;
     GLuint smooth, twoSided;
     GLuint pa, pb, pc;
+    __GLfloat dz = 0.0f;                /* the polygon offset put into the vertices' z for this triangle */
 
     /* Compute signed area of the triangle */
     dxAC = a->window.x - c->window.x;
@@ -886,7 +952,7 @@ void __fastcall __glSSTRenderTriangle(__GLcontext *gc, __GLvertexICD *a, __GLver
       case 2:
         if (*(GLint *)&area & 0x7fffffff) {
             if (gc->state.enables.general & __GL_POLYGON_OFFSET_FILL_ENABLE) {
-                hwPolygonOffset(gc, area, a, b, c, dxAC, dxBC, dyAC, dyBC);
+                dz = hwPolygonOffset(gc, area, a, b, c, dxAC, dxBC, dyAC, dyBC);
             }
             if (gc->state.enables.general & __GL_POLYGON_SMOOTH_ENABLE) {
                 grAADrawTriangle(a, b, c, a->flagBits & 0x1000, b->flagBits & 0x1000, c->flagBits & 0x1000);
@@ -897,16 +963,21 @@ void __fastcall __glSSTRenderTriangle(__GLcontext *gc, __GLvertexICD *a, __GLver
         break;
       case 0:
         if (gc->state.enables.general & __GL_POLYGON_OFFSET_POINT_ENABLE) {
-            hwPolygonOffset(gc, area, a, b, c, dxAC, dxBC, dyAC, dyBC);
+            dz = hwPolygonOffset(gc, area, a, b, c, dxAC, dxBC, dyAC, dyBC);
         }
         (*gc->procs.renderTrianglePolygonModePoint)(gc, a, b, c);
         break;
       case 1:
         if (gc->state.enables.general & __GL_POLYGON_OFFSET_LINE_ENABLE) {
-            hwPolygonOffset(gc, area, a, b, c, dxAC, dxBC, dyAC, dyBC);
+            dz = hwPolygonOffset(gc, area, a, b, c, dxAC, dxBC, dyAC, dyBC);
         }
         (*gc->procs.renderTrianglePolygonModeLine)(gc, a, b, c);
         break;
+    }
+    if (dz != 0.0f) {                   /* the vertices go on to the next triangle without the offset */
+        a->window.z -= dz;
+        b->window.z -= dz;
+        c->window.z -= dz;
     }
 
     if (!smooth) {
@@ -923,14 +994,19 @@ void __fastcall __glSSTRenderTriangle(__GLcontext *gc, __GLvertexICD *a, __GLver
     }
 }
 
-/* 69061520 (size 238) -- hwPolygonOffset: polygon offset -> grDepthBiasLevel (units, plus factor * max |dz/dx|,
-** |dz/dy|). area precedes a: a float never goes in a register, so a is still EDX, and the callers evaluate a before
-** pushing area (arguments right to left), as the original does */
-void __fastcall hwPolygonOffset(__GLcontext *gc, __GLfloat area, __GLvertexICD *a, __GLvertexICD *b,
+/* 69061520 (size 238) -- hwPolygonOffset: the polygon offset of a triangle (units, plus factor * max |dz/dx|,
+** |dz/dy|, in depth-buffer units).  The original put it in the chip's depth-bias register (grDepthBiasLevel): a
+** zaColor write per triangle, each draining the pixel pipeline (SoF's decal batch: ~280 per frame, 3 fps).  Now it
+** goes into the three vertices' window z, as MesaFX does; returns the amount, which the caller takes back after the
+** draw (the vertices are shared with the next triangle).  Clamped to the depth range so a float out of it cannot
+** wrap in the chip.  area precedes a: a float never goes in a register, so a is still EDX, and the callers evaluate
+** a before pushing area (arguments right to left), as the original does */
+__GLfloat __fastcall hwPolygonOffset(__GLcontext *gc, __GLfloat area, __GLvertexICD *a, __GLvertexICD *b,
                              __GLvertexICD *c, __GLfloat dxAC, __GLfloat dxBC, __GLfloat dyAC, __GLfloat dyBC)
 {
     GLint depthBits = gc->modes.depthBits;
     GLint bias;
+    __GLfloat dz, zMax;
 
     if (depthBits > 16 && gc->fx.zPrecision32) {
         bias = (GLint)(gc->state.polygon.units * 256.0f);
@@ -959,8 +1035,131 @@ void __fastcall hwPolygonOffset(__GLcontext *gc, __GLfloat area, __GLvertexICD *
         }
         bias += (GLint)(maxdZ * gc->state.polygon.factor);
     }
-    grDepthBiasLevel(bias);
-    gc->hwcx.grDirty |= 1 << 18;
+    dz = (__GLfloat)bias;
+    zMax = gc->constants.depthScale;
+    if (a->window.z + dz < 0.0f || b->window.z + dz < 0.0f || c->window.z + dz < 0.0f ||
+        a->window.z + dz > zMax || b->window.z + dz > zMax || c->window.z + dz > zMax)
+        return 0.0f;                    /* a vertex would leave the depth range: no offset rather than a wrap */
+    a->window.z += dz;
+    b->window.z += dz;
+    c->window.z += dz;
+    return dz;
+}
+
+/* The same for the direct-FIFO paths (sst_offsetgen.c's stubs, called from the generated triangle code with the
+** triangle's area): the amount goes into the vertices' window z before the triangle is copied into its packet
+** and comes out again afterwards -- hwOffsetUndo after the draw (the immediate tail, the clipper), or the next
+** hwOffsetApply / the loop's end (the vertex-array loops, where a vertex is shared with the next triangle; those
+** loops send independent triangles while offset is on).  Three vertices as pointers (hwOffsetApply; a fourth for
+** the quad packet through g_hwOffsetV3, which the quad tail sets and the call consumes) or as indices into the
+** field-major hardware vertex arrays (hwOffsetApplyIdx).  One pending offset at a time. */
+__GLvertexICD *g_hwOffsetV3;
+static struct {
+    GLint       kind;                   /* 0 nothing pending, 1 pointers, 2 indices */
+    __GLfloat   dz;
+    __GLvertexICD *v[4];
+    __GLfloat  *z[3];
+} s_hwOffset;
+
+static __GLfloat hwOffsetAmount(__GLcontext *gc, __GLfloat area, const __GLfloat *a, const __GLfloat *b, const __GLfloat *c)
+{
+    GLint depthBits = gc->modes.depthBits;
+    GLint bias;
+
+    if (depthBits > 16 && gc->fx.zPrecision32) {
+        bias = (GLint)(gc->state.polygon.units * 256.0f);
+    } else {
+        bias = (GLint)gc->state.polygon.units;
+        if (depthBits > 16)
+            bias <<= 8;
+    }
+    if (gc->state.polygon.factor != 0.0f && area != 0.0f) {
+        __GLfloat oneOverArea = 1.0f / area;
+        __GLfloat dxAC = a[0] - c[0], dxBC = b[0] - c[0], dyAC = a[1] - c[1], dyBC = b[1] - c[1];
+        __GLfloat dzAC = a[2] - c[2], dzBC = b[2] - c[2];
+        __GLfloat dzdx = (dzAC * dyBC - dzBC * dyAC) * oneOverArea;
+        __GLfloat dzdy = (dzBC * dxAC - dzAC * dxBC) * oneOverArea;
+        __GLfloat maxdZ = (__GLfloat)fabs(dzdx);
+
+        if ((__GLfloat)fabs(dzdy) > maxdZ)
+            maxdZ = (__GLfloat)fabs(dzdy);
+        bias += (GLint)(maxdZ * gc->state.polygon.factor);
+    }
+    return (__GLfloat)bias;
+}
+
+void __cdecl hwOffsetUndo(__GLcontext *gc)
+{
+    GLint i;
+
+    (void)gc;
+    if (s_hwOffset.kind == 1) {
+        for (i = 0; i < 4; i++)
+            if (s_hwOffset.v[i] != NULL)
+                s_hwOffset.v[i]->window.z -= s_hwOffset.dz;
+    } else if (s_hwOffset.kind == 2) {
+        for (i = 0; i < 3; i++)
+            *s_hwOffset.z[i] -= s_hwOffset.dz;
+    }
+    s_hwOffset.kind = 0;
+}
+
+void __cdecl hwOffsetApply(__GLcontext *gc, GLuint areaBits, __GLvertexICD *a, __GLvertexICD *b, __GLvertexICD *c)
+{
+    __GLvertexICD *d = g_hwOffsetV3;
+    __GLfloat dz, zMax;
+
+    g_hwOffsetV3 = NULL;
+    hwOffsetUndo(gc);
+    dz = hwOffsetAmount(gc, *(__GLfloat *)&areaBits, &a->window.x, &b->window.x, &c->window.x);
+    zMax = gc->constants.depthScale;
+    if (a->window.z + dz < 0.0f || a->window.z + dz > zMax || b->window.z + dz < 0.0f || b->window.z + dz > zMax ||
+        c->window.z + dz < 0.0f || c->window.z + dz > zMax ||
+        (d != NULL && (d->window.z + dz < 0.0f || d->window.z + dz > zMax)))
+        return;                         /* a vertex would leave the depth range: no offset rather than a wrap */
+    a->window.z += dz;
+    b->window.z += dz;
+    c->window.z += dz;
+    if (d != NULL)
+        d->window.z += dz;
+    s_hwOffset.kind = 1;
+    s_hwOffset.dz = dz;
+    s_hwOffset.v[0] = a;
+    s_hwOffset.v[1] = b;
+    s_hwOffset.v[2] = c;
+    s_hwOffset.v[3] = d;
+}
+
+void __cdecl hwOffsetApplyIdx(__GLcontext *gc, GLuint areaBits, GLint ia, GLint ib, GLint ic)
+{
+    /* field k of the hardware vertex i is at vtxBase + k * vtxCapacity + i * 4 (window.x at 0, y at 4, z at 8) */
+    GLubyte *base = gc->hwcx.vtxBase;
+    GLint cap = gc->hwcx.vtxCapacity;
+    __GLfloat va[3], vb[3], vc[3];
+    __GLfloat *za, *zb, *zc, dz, zMax;
+    GLint k;
+
+    hwOffsetUndo(gc);
+    for (k = 0; k < 3; k++) {
+        va[k] = *(__GLfloat *)(base + k * 4 * cap + ia * 4);
+        vb[k] = *(__GLfloat *)(base + k * 4 * cap + ib * 4);
+        vc[k] = *(__GLfloat *)(base + k * 4 * cap + ic * 4);
+    }
+    za = (__GLfloat *)(base + 8 * cap + ia * 4);
+    zb = (__GLfloat *)(base + 8 * cap + ib * 4);
+    zc = (__GLfloat *)(base + 8 * cap + ic * 4);
+    dz = hwOffsetAmount(gc, *(__GLfloat *)&areaBits, va, vb, vc);
+    zMax = gc->constants.depthScale;
+    if (*za + dz < 0.0f || *za + dz > zMax || *zb + dz < 0.0f || *zb + dz > zMax || *zc + dz < 0.0f || *zc + dz > zMax)
+        return;
+    *za += dz;
+    *zb += dz;
+    *zc += dz;
+    s_hwOffset.kind = 2;
+    s_hwOffset.dz = dz;
+    s_hwOffset.z[0] = za;
+    s_hwOffset.z[1] = zb;
+    s_hwOffset.z[2] = zc;
 }
 
 /* 69061610 (size 434): __glSSTRenderSmoothTriangle (Glide fill) */
