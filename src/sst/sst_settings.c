@@ -256,10 +256,12 @@ void __fastcall hwBuildGetStrings(__GLcontext *gc)
             q += sprintf(q, "GL_EXT_texture_compression_s3tc ");
             q += sprintf(q, "GL_ARB_texture_compression ");
             q += sprintf(q, "GL_3DFX_texture_compression_FXT1 ");
-        } else {
-            q += sprintf(q, "GL_EXT_paletted_texture ");
-            q += sprintf(q, "GL_EXT_shared_texture_palette ");
         }
+        /* the paletted textures on every card: the original offered them only without the Napalm formats.  MesaFX
+        ** offers them everywhere and games choose: GLHexen II 83 -> 92 fps on its 8-bit art, Sin's 8-bit texture
+        ** mode 90 fps against 89 in 16-bit (its default mixed mode is the slowest, 87) */
+        q += sprintf(q, "GL_EXT_paletted_texture ");
+        q += sprintf(q, "GL_EXT_shared_texture_palette ");
         if (gc->fx.numTMUs > 1)
             q += sprintf(q, "GL_SGIS_multitexture ");
         if (gc->hwcx.hasFogCoord)

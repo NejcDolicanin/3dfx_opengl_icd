@@ -78,6 +78,7 @@ void __fastcall texMgrSetMemoryEnd(__GLcontext *gc, GLuint end)
         blk = m->heap[__GL_TMU_SLOT(i)];
         blk->size = m->end - blk->start + grGetInteger(GR_TEXTURE_ALIGN);
     }
+    ICD_T("texture heap bytes (TMU slot 0)", m->heap[0]->size);
 }
 
 /* 6903b740 (size 90) -- texMgrRelease: release the texture manager (the last user frees DirectDraw and the heaps) */
@@ -471,6 +472,42 @@ GLboolean __fastcall MakeResidentTryAllocateSurface(__GLcontext *gc, __GLtexture
     return GL_FALSE;
 }
 
+/* texMgrFindBlock: where a texture of `need` bytes goes in a TMU slot's heap: the first free block that holds it
+** (nothing to evict), else the start of the run of consecutive blocks whose most recently bound texture is the
+** oldest; the caller evicts that run (__glSSTAllocateTextureMemory's loop).  The original always took the run after
+** the rover, in use or not: once the heap had filled, every allocation evicted live textures and the evicted ones
+** came back the next frame (GLHexen II: ~22 texture downloads and 3-6 evictions per frame, for ever).  A window
+** over the block list: O(blocks x blocks per run) per allocation. */
+static __GLtexMemBlockICD *texMgrFindBlock(__GLtexMgrFxICD *m, GLuint tmu, GLint need)
+{
+    __GLtexMemBlockICD *heap = m->heap[__GL_TMU_SLOT(tmu)];
+    __GLtexMemBlockICD *start, *b, *best = NULL;
+    GLuint newest, bestNewest = 0;
+    GLint sum;
+
+    for (b = heap; b != NULL; b = b->next)
+        if (b->tex == NULL && (GLint)b->size >= need)
+            return b;
+    for (start = heap; start != NULL; start = start->next) {
+        sum = 0;
+        newest = 0;
+        for (b = start; b != NULL && sum < need; b = b->next) {
+            sum += b->size;
+            if (b->tex != NULL && b->lastUse > newest)
+                newest = b->lastUse;
+        }
+        if (sum < need)
+            break;                      /* no later start fits either */
+        if (best == NULL || newest < bestNewest) {
+            best = start;
+            bestNewest = newest;
+        }
+        if (newest == 0)
+            break;
+    }
+    return best != NULL ? best : heap;
+}
+
 /* 6903c340 (size 596) -- __glSSTAllocateTextureMemory: allocate TMU memory for a texture (all levels when
 ** mipmapped, a split trilinear one as its odd levels then its even ones, else the base level): reuse its block when the size still fits, else take blocks from the rover (or the
 ** heap start), evicting their textures and merging them; in windowed mode a surface slot only */
@@ -512,9 +549,7 @@ GLint __fastcall __glSSTAllocateTextureMemory(__GLcontext *gc, __GLtextureFxICD 
             }
             __glSSTFreeTextureMemory(gc, tex, tmu);
         }
-        blk = m->rover[__GL_TMU_SLOT(tmu)]->next;
-        if (blk == NULL || (GLint)(m->end - blk->start) < tex->memRequired)
-            blk = m->heap[__GL_TMU_SLOT(tmu)];
+        blk = texMgrFindBlock(m, tmu, tex->memRequired);
         left = tex->memRequired;
         for (b = blk; b != NULL; b = blk->next) {
             if (left <= 0)
@@ -538,6 +573,7 @@ GLint __fastcall __glSSTAllocateTextureMemory(__GLcontext *gc, __GLtextureFxICD 
     }
 done:
     blk->tex = tex;
+    blk->lastUse = gc->fx.swapCount;
     TEX_SLOT(tex->mem, tmu) = blk;
     m->rover[__GL_TMU_SLOT(tmu)] = blk;
     TEX_SLOT(tex->onTmu, tmu) = state;
