@@ -308,6 +308,31 @@ void __fastcall wglGlideFreeBuffers(__GLcontext *gc)
     }
 }
 
+/* wglGlideResync: bring a reopened Glide screen in line with the gc.  A Glide window opened again (alt-tab
+** restore, or a release / set-context pair that closed and reopened it) starts in default hardware state, and what
+** the ICD keeps outside its state records is stale with it: the gamma ramp, the texture memory (the desktop may have
+** drawn over it, and a different mode moves where it starts: the heaps are rebuilt, every texture downloads again
+** and rebinds), and the palette of 8-bit textures (fix: the original's restore left it marked as loaded, so paletted
+** textures came back with whatever palette the new context had).  Then every state record is marked unsent;
+** `flush` sends them now (the restore), else the next validation does (make-current marks them dirty itself). */
+static void wglGlideResync(__GLcontext *gc, GLboolean flush)
+{
+    __GLtexMgrICD *texMgr = gc->texMgr;
+
+    wglReloadGammaRamp(gc);
+    (*texMgr->reset)(gc, gc->texMgr);                                   /* 6903b7a0: rebuild the texture heaps */
+    gc->hwcx.sharedPaletteLoaded = 0;
+    if (gc->hwcx.paletteTexture != NULL) {
+        gc->hwcx.paletteTexture->paletteLoaded = 0;
+        gc->hwcx.paletteTexture = NULL;
+    }
+    gc->dirtyMask |= __GL_DIRTY_HWTEXTURE_ICD;                         /* bound textures: resident, sourced again */
+    gc->beginMode = __GL_NEED_VALIDATE;
+    hwDirtyAllGrState(gc);                                              /* every Glide state record dirty */
+    if (flush)
+        ((void (__fastcall *)(__GLcontext *))hwFlushGrState)(gc);       /* EDX not set */
+}
+
 /* 69015619 -- open the fullscreen Glide window for a gc: choose the mode, open, record
 ** the screen size (gc->maxViewport = screen), hook the window swap.  -1 on failure.
 */
@@ -316,6 +341,7 @@ GLint __fastcall wglGlideOpen(__GLcontext *gc)
 {
     __WGLwindow *w = GC_imports_wscx(gc)->window;
     GLint res, ctx;
+    GLboolean reopened;
 
     if (hwHasSurfaceExt()) {                     /* SURFACE ext: drop any windowed surfaces first */
         winFreeDrawableBuffers(w);
@@ -329,6 +355,7 @@ GLint __fastcall wglGlideOpen(__GLcontext *gc)
         res = g_defaultResolution;            /* (690eeedc) under HAL_CSIM */
     }
     wglUnlock();                              /* the caller holds the lock: open the screen without it */
+    reopened = gc->fx.glideOpen == 0 && (gc->mcFlags & __GL_INIT_HW) != 0;   /* opened before: now again */
     if (gc->fx.glideOpen == 0) ctx = wglGlideWinOpen(gc, res);
     else ctx = gc->hwcx.glideContext;
     ICD_T("wglGlideOpen context (-1 = failed)", ctx);
@@ -345,6 +372,13 @@ GLint __fastcall wglGlideOpen(__GLcontext *gc)
     gc->fx.glideOpen = 1;
     wglLock();
     grSelectContext(ctx);
+    if (reopened) {
+        /* fix: the original resynced only on its alt-tab restore; a make-current that reopened the screen went on
+        ** with the old gamma, textures and palette (Quakespasm: SDL releases and sets the context again) */
+        ICD_T("wglGlideOpen: reopened, resync", ctx);
+        gc->hwcx.glideContext = ctx;
+        wglGlideResync(gc, GL_FALSE);
+    }
     return ctx;
 fail:
     return -1;
@@ -389,17 +423,12 @@ void __fastcall wglGlideRestore(HWND hwnd)
         open = &g_glideOwnerGC->fx.glideOpen;
         if (*open == 0 && hwnd == GC_imports_wscx(g_glideOwnerGC)->window->hwnd) {
             __GLcontext *gc = g_glideOwnerGC;
-            __GLtexMgrICD *texMgr;
             GLint ctx;
             wglGlideTrace("Restoring glide\n");
             ICD_T("wglGlideRestore (WM_ACTIVATE active)", hwnd);
-            texMgr = gc->texMgr;
             ctx = fx->hwcx.glideContext = wglGlideWinOpen(gc, fx->hwcx.resolution);   /* the mode it had */
             if (ctx != 0 && ctx != -1) {
-                wglReloadGammaRamp(gc);
-                (*texMgr->reset)(gc, gc->texMgr);                          /* 6903b7a0: rebuild the texture heaps */
-                hwDirtyAllGrState(gc);                                          /* every Glide state record dirty */
-                ((void (__fastcall *)(__GLcontext *))hwFlushGrState)(gc);   /* EDX not set */
+                wglGlideResync(gc, GL_TRUE);
                 *open = 1;
                 return;
             }
