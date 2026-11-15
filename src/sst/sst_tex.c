@@ -811,6 +811,43 @@ void __stdcall __glsstim_TexSubImage2D(GLenum target, GLint level, GLint xoffset
             }
             dst += skip;
         }
+    } else if (format == GL_RGBA && type == GL_UNSIGNED_BYTE &&
+               (lp = tex->t.level[level], (lp)->texFormat->pixelType >= 2 && (lp)->texFormat->pixelType <= 4)) {
+        /* the same direct store for the other RGBA formats (ARGB1555 = 2, ARGB4444 = 3, ARGB8888 = 4), with the
+        ** span packers' truncation.  The original sent these through the generic span pipeline, about 120 cycles
+        ** a texel: Quakespasm's lightmaps are GL_RGBA (ARGB4444 at 16 bpp) and it updates one before each lit
+        ** polygon, which cost 2 ms in a frame with a hundred of them */
+        const GLubyte *src = (const GLubyte *)pixels;
+        GLint stride = lp->width2;
+        GLint x, y;
+
+        if (lp->texFormat->pixelType == 4) {
+            GLuint *dst = (GLuint *)lp->buffer + (stride * yoffset + xoffset);
+            for (y = 0; y < height; y++) {
+                for (x = 0; x < width; x++) {
+                    dst[x] = (GLuint)src[3] << 24 | (GLuint)src[0] << 16 | (GLuint)src[1] << 8 | src[2];
+                    src += 4;
+                }
+                dst += stride;
+            }
+        } else {
+            GLushort *dst = (GLushort *)lp->buffer + (stride * yoffset + xoffset);
+            GLboolean argb4 = (GLboolean)(lp->texFormat->pixelType == 3);
+            for (y = 0; y < height; y++) {
+                if (argb4) {
+                    for (x = 0; x < width; x++) {
+                        dst[x] = (GLushort)((src[3] >> 4) << 12 | (src[0] >> 4) << 8 | (src[1] >> 4) << 4 | src[2] >> 4);
+                        src += 4;
+                    }
+                } else {
+                    for (x = 0; x < width; x++) {
+                        dst[x] = (GLushort)((src[3] >> 7) << 15 | (src[0] >> 3) << 10 | (src[1] >> 3) << 5 | src[2] >> 3);
+                        src += 4;
+                    }
+                }
+                dst += stride;
+            }
+        }
     } else {
         __glInitTexSourceUnpack(gc, &spanInfo, width, height, 1, format, type, pixels, 0);
         __glInitTexSubImageStore(gc, &spanInfo, &tex->t, level, xoffset, yoffset, 0);
