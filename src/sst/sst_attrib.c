@@ -856,42 +856,23 @@ void __stdcall __glsstim_ReadBuffer(GLenum mode)
 }
 
 /*
-** 6901cb40 (size 344) -- hwMapDepthFunc: the depth function to program for a depth direction (gc->fx.depthDirection,
-** GL_LEQUAL or GL_GEQUAL) and the last depth function: GL_NEVER / GL_ALWAYS / GL_EQUAL / GL_NOTEQUAL
-** stay, the ordered ones keep or flip their direction.  The mix of result variable and direct returns
-** reproduces the original's shared return blocks and cross-jumped tails.
+** 6901cb40 -- hwMapDepthFunc: the depth function to program while the z-precision trick runs: as given in the
+** normal direction (gc->fx.depthDirection GL_LEQUAL), the ordered ones mirrored in the inverted one (GL_GEQUAL).
+** Fix: the original also looked at the previous glDepthFunc and treated a change between a "less" and a "greater"
+** function as the game flipping the depth direction itself, so a game that uses GL_GEQUAL for one pass and goes
+** back to GL_LEQUAL (the sky of the Quake source ports) drew the rest of the frame with the test inverted (the
+** world smeared).  A game doing its own flip reverses glDepthRange, which turns the trick off anyway.
 */
 GLenum __fastcall hwMapDepthFunc(GLenum func, GLenum dir, GLenum last)
 {
-    GLenum r = func;
-
-    if (func == GL_NEVER || func == GL_ALWAYS || func == GL_EQUAL || func == GL_NOTEQUAL)
-        return func;
-    if (dir == GL_LEQUAL) {
-        if (func == GL_LESS) {
-            r = (last == GL_GREATER || last == GL_GEQUAL) ? GL_GREATER : GL_LESS;
-        } else if (func == GL_LEQUAL) {
-            if (last == GL_GREATER || last == GL_GEQUAL) return GL_GEQUAL;
-            return GL_LEQUAL;
-        } else if (func == GL_GREATER) {
-            if (last == GL_LESS || last == GL_LEQUAL) r = GL_GREATER;
-            else return GL_LESS;
-        } else if (func == GL_GEQUAL) {
-            if (last == GL_LESS || last == GL_LEQUAL) return GL_GEQUAL;
-            return GL_LEQUAL;
-        }
-    } else if (dir == GL_GEQUAL) {
-        if (func == GL_LESS) {
-            r = (last == GL_GREATER || last == GL_GEQUAL) ? GL_LESS : GL_GREATER;
-        } else if (func == GL_LEQUAL) {
-            if (last == GL_GREATER || last == GL_GEQUAL) return GL_LEQUAL;
-            return GL_GEQUAL;
-        } else if (func == GL_GREATER) {
-            if (last == GL_LESS || last == GL_LEQUAL) return GL_LESS;
-            return GL_GREATER;
-        } else if (func == GL_GEQUAL) {
-            return (last == GL_LESS || last == GL_LEQUAL) ? GL_LEQUAL : GL_GEQUAL;
+    (void)last;
+    if (dir == GL_GEQUAL) {
+        switch (func) {
+          case GL_LESS:    return GL_GREATER;
+          case GL_LEQUAL:  return GL_GEQUAL;
+          case GL_GREATER: return GL_LESS;
+          case GL_GEQUAL:  return GL_LEQUAL;
         }
     }
-    return r;
+    return func;
 }
