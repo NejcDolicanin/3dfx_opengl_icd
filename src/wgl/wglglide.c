@@ -265,19 +265,27 @@ GLint __fastcall wglGlideWinOpen(__GLcontext *gc, GLint resolution)
 /* 690151e0 -- close the Glide screen */
 void __fastcall wglGlideWinClose(__GLcontext *gc)
 {
+    FxBool closed;
+
     ICD_T("wglGlideWinClose ctx", gc->hwcx.glideContext); ICD_T("  LFB locks held", ICD_LFB_N);
-    grSstWinClose(gc->hwcx.glideContext);
+    ICD_T("  Glide lost flag (1 = lost-path close)",
+          gc->hwcx.cmdTransportInfo != NULL ? **gc->hwcx.cmdTransportInfo->ptrLostContext : 0xffffffff);
+    closed = grSstWinClose(gc->hwcx.glideContext);
+    ICD_T("  grSstWinClose result", closed);
+    (void)closed;
     wglDisplayNotifyClose();
 }
 
 /* 69015553 -- window->swapBuffers for the fullscreen window: just make sure Glide is selected.
 ** Returns a GLboolean (mov al,1), as the callers (drv.c, wglstub.c, wglstand.c) read it. */
+static GLboolean wglGlideReopen(__GLcontext *gc);
+static DWORD s_reopenTick;              /* GetTickCount of the swap's last reopen */
+
 GLboolean __fastcall wglGlideWindowSwap(__WGLwindow *w)
 {
     __GLcontext *gc = g_glideOwnerGC;
     GLint *open = &g_glideOwnerGC->fx.glideOpen;          /* (no NULL check, as in the original) */
 
-    (void)w;
     if (*open != 0) {
         if (grSelectContext(g_glideOwnerGC->hwcx.glideContext) == 0) {
             wglGlideTrace("Lost Glide context");
@@ -285,6 +293,16 @@ GLboolean __fastcall wglGlideWindowSwap(__WGLwindow *w)
             wglGlideWinClose(gc);
             *open = 0;
         }
+    }
+    if (*open == 0 && GetForegroundWindow() == w->hwnd && !IsIconic(w->hwnd)
+        && GetTickCount() - s_reopenTick >= 500) {
+        /* fix: the original left the screen closed until the next WM_ACTIVATE.  A game that sets the display mode
+        ** itself when it is activated (SDL) loses the context right after the restore reopened it, with no further
+        ** activation to come: black screen.  Reopen here while the window is in front, at most twice a second.
+        ** Not when it is minimised: on the way out SDL minimises it before the deactivation arrives */
+        s_reopenTick = GetTickCount();
+        ICD_T("wglGlideWindowSwap: closed in the foreground, reopen", w->hwnd);
+        wglGlideReopen(gc);
     }
     return GL_TRUE;
 }
@@ -337,6 +355,8 @@ static void wglGlideResync(__GLcontext *gc, GLboolean flush)
 ** the screen size (gc->maxViewport = screen), hook the window swap.  -1 on failure.
 */
 
+static HWND s_glideHwnd;                /* the window of the last fullscreen open */
+
 GLint __fastcall wglGlideOpen(__GLcontext *gc)
 {
     __WGLwindow *w = GC_imports_wscx(gc)->window;
@@ -348,14 +368,20 @@ GLint __fastcall wglGlideOpen(__GLcontext *gc)
         wglGlideInitLFBWindow(w, (__WGLmodes *)&gc->modes);  /* 69015200 */
     }
     grSstSelect(0);
-    res = wglGlideChooseResolution(gc);
+    reopened = gc->fx.glideOpen == 0 && (gc->mcFlags & __GL_INIT_HW) != 0;   /* opened before: now again */
+    if (reopened && w->hwnd == s_glideHwnd) {
+        /* fix: the mode it had, as the alt-tab restore does.  The original measured the window again, and the close
+        ** had put the desktop mode back under it: Glide reopened at the desktop size (Quakespasm) */
+        res = gc->hwcx.resolution;
+    } else {
+        res = wglGlideChooseResolution(gc);
+    }
     ICD_T("wglGlideOpen resolution (0xff = none)", res);
     if (res == 0xff) {
         if (getenv("HAL_CSIM") == NULL) goto fail;
         res = g_defaultResolution;            /* (690eeedc) under HAL_CSIM */
     }
     wglUnlock();                              /* the caller holds the lock: open the screen without it */
-    reopened = gc->fx.glideOpen == 0 && (gc->mcFlags & __GL_INIT_HW) != 0;   /* opened before: now again */
     if (gc->fx.glideOpen == 0) ctx = wglGlideWinOpen(gc, res);
     else ctx = gc->hwcx.glideContext;
     ICD_T("wglGlideOpen context (-1 = failed)", ctx);
@@ -367,6 +393,7 @@ GLint __fastcall wglGlideOpen(__GLcontext *gc)
     g_screenHeight = gc->constants.maxViewportHeight = g_resTable[res].height;
     ICD_T("wglGlideOpen screen width", g_screenWidth); ICD_T("  screen height", g_screenHeight);
     gc->hwcx.resolution = res;
+    s_glideHwnd = w->hwnd;
     g_glideOwnerGC = gc;
     w->swapBuffers = (GLuint (__fastcall *)(__WGLwindow *))wglGlideWindowSwap;   /* returns a GLboolean */
     gc->fx.glideOpen = 1;
@@ -417,24 +444,36 @@ void __fastcall wglGlideLose(HWND hwnd)
 /* 690157a1 -- WM_ACTIVATE(WA_ACTIVE): "Restoring glide" */
 void __fastcall wglGlideRestore(HWND hwnd)
 {
-    __GLcontext *fx = g_glideOwnerGC;
     GLint *open;
     if (g_glideOwnerGC != NULL && g_glideOwnerGC != g_nullGC) {
         open = &g_glideOwnerGC->fx.glideOpen;
         if (*open == 0 && hwnd == GC_imports_wscx(g_glideOwnerGC)->window->hwnd) {
             __GLcontext *gc = g_glideOwnerGC;
-            GLint ctx;
             wglGlideTrace("Restoring glide\n");
             ICD_T("wglGlideRestore (WM_ACTIVATE active)", hwnd);
-            ctx = fx->hwcx.glideContext = wglGlideWinOpen(gc, fx->hwcx.resolution);   /* the mode it had */
-            if (ctx != 0 && ctx != -1) {
-                wglGlideResync(gc, GL_TRUE);
-                *open = 1;
-                return;
-            }
-            *open = 0;
+            wglGlideReopen(gc);
         }
     }
+}
+
+/* wglGlideReopen: open the owner's closed fullscreen Glide window again at the mode it had and resync; the restore
+** of WM_ACTIVATE and of the swap.  Not re-entered (the mode set dispatches window messages) */
+static GLboolean wglGlideReopen(__GLcontext *gc)
+{
+    static GLboolean busy;
+    GLint ctx;
+
+    if (busy || gc->fx.glideOpen != 0) return GL_FALSE;
+    busy = GL_TRUE;
+    ctx = gc->hwcx.glideContext = wglGlideWinOpen(gc, gc->hwcx.resolution);   /* the mode it had */
+    if (ctx != 0 && ctx != -1) {
+        wglGlideResync(gc, GL_TRUE);
+        gc->fx.glideOpen = 1;
+    } else {
+        gc->fx.glideOpen = 0;
+    }
+    busy = GL_FALSE;
+    return (GLboolean)gc->fx.glideOpen;
 }
 
 /* ------------------------------------------------- LFB-backed drawable buffers */
