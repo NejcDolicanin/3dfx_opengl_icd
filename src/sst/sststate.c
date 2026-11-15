@@ -208,6 +208,15 @@ void __fastcall hwDefaultCombineExt(__GLcontext *gc)
         hwLoadTexAlphaCombineExt(gc, 1, GR_CMBX_OTHER_TEXTURE_ALPHA, GR_FUNC_MODE_X, GR_CMBX_ZERO, GR_FUNC_MODE_X,
                      GR_CMBX_ZERO, 1, GR_CMBX_ZERO, 0, 0);
     }
+    if (!gc->texture.textureEnabled[0] && !gc->texture.textureEnabled[1]) {
+        /* fix: with no texture at all the original still took the colour from the TMUs (the iterated colour passed
+        ** through both), so Glide kept both TMUs busy and untextured drawing never ran two pixels per clock (a
+        ** full-screen blend in Quakespasm: 104 against MesaFX's 108 fps).  Take the iterated colour and alpha in the
+        ** colour combine itself; __glSSTLoadCombineFunctionExt loads the texture inputs again with the next texture */
+        hwLoadColorAlphaCombineExt(gc, GR_CMBX_ITRGB, GR_FUNC_MODE_X, GR_CMBX_ZERO, GR_FUNC_MODE_X, GR_CMBX_ZERO, 1,
+                                   GR_CMBX_ZERO, 0, GR_CMBX_ITALPHA, GR_FUNC_MODE_X, GR_CMBX_ZERO, GR_FUNC_MODE_X,
+                                   GR_CMBX_ZERO, 1, GR_CMBX_ZERO, 0);
+    }
 }
 
 /* 69019fe0 -- hwValidateSphereMapInverse: sphere-map texgen on unit 0 needs the modelview inverse transpose: update
