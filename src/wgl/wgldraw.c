@@ -79,8 +79,15 @@ void __fastcall wglDrawLockDP(__WGLdrawable *dp, __GLcontext *gc)
         if ((flags & 1) && !(flags & 0x10)) {            /* window moved / resized */
             __WGLwindow *w = rc->window;
             rc->flags = flags & ~1;
-            wglDrawResize(dp, w->clientOrigin.x, w->clientOrigin.y, w->width, w->height);
-            GC_exports_notifyResize(gc)(gc, w->clientOrigin.x, w->clientOrigin.y, w->width, w->height);
+            if (wglDrawResize(dp, w->clientOrigin.x, w->clientOrigin.y, w->width, w->height)) {
+                GC_exports_notifyResize(gc)(gc, w->clientOrigin.x, w->clientOrigin.y, w->width, w->height);
+            } else {
+                /* fix: the original told the gc the new size even when a buffer could not be resized, and the
+                ** software stencil / accum code then wrote past the old block: draw nothing, try again next time */
+                ICD_T("wglDrawLockDP: buffer resize failed, width", w->width);
+                rc->flags |= 1;
+                GC_exports_notifyResize(gc)(gc, w->clientOrigin.x, w->clientOrigin.y, 0, 0);
+            }
         }
         if (flags & 2) {                                 /* window destroyed */
             rc->flags &= ~2;
@@ -107,32 +114,34 @@ GLubyte __fastcall wglDrawResize(__WGLdrawable *dp, GLint x, GLint y, GLuint w, 
 
     wglCSEnter(dp->lock);
     r = dp->frontBuffer.resize(&dp->frontBuffer, x, y, w, h, dp, 1);
-    if (r == 0) return 0;
+    if (r == 0) goto fail;
     mask = 1;
     if (r == WGLBUF_FALLBACK) mask = 0;
     if (m->doubleBufferMode) {
         r = dp->backBuffer.resize(&dp->backBuffer, x, y, w, h, dp, 4);
-        if (r == 0) return 0;
+        if (r == 0) goto fail;
         mask |= 4; if (r == WGLBUF_FALLBACK) mask &= ~4u;
     }
     if (m->haveAccumBuffer) {
         r = dp->accumBuffer.resize(&dp->accumBuffer, x, y, w, h, dp, 0x10);
-        if (r == 0) return 0;
+        if (r == 0) goto fail;
         mask |= 0x10; if (r == WGLBUF_FALLBACK) mask &= ~0x10u;
     }
     if (m->haveDepthBuffer) {
         r = dp->depthBuffer.resize(&dp->depthBuffer, x, y, w, h, dp, 0x20);
-        if (r == 0) return 0;
+        if (r == 0) goto fail;
         mask |= 0x20; if (r == WGLBUF_FALLBACK) mask &= ~0x20u;
     }
     if (m->haveStencilBuffer) {
         r = dp->stencilBuffer.resize(&dp->stencilBuffer, x, y, w, h, dp, 0x40);
-        if (r == 0) return 0;
+        if (r == 0) goto fail;
         mask |= 0x40; if (r == WGLBUF_FALLBACK) mask &= ~0x40u;
     }
     dp->accelBufferMask = mask;
     wglCSLeave(dp->lock);
-    return 1;
+    return 1;fail:
+    wglCSLeave(dp->lock);       /* fix: the original returned with the lock held */
+    return 0;
 }
 
 /* 6900ce70 -- wglFreeBuffers (SGI WGLBUF.C __wglFreeBuffers, under the drawable lock): free every buffer of the

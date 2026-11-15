@@ -12,10 +12,12 @@ static GLubyte __fastcall memResize(__WGLbuffer *buf, GLint x, GLint y, GLuint w
     GLuint size = w * h * buf->elementSize;
     void *p;
     (void)x; (void)y; (void)mask;
-    if (size != buf->size) {
+    /* fix: an empty window (minimised) keeps its block; the original shrank it to nothing and had to get the whole
+    ** buffer back on the way up */
+    if (size != buf->size && size != 0) {
         if (buf->handle != NULL) {
             p = dp->realloc(buf->handle, size + 0x1f);
-            if (p == NULL) { wglOglError("Mem: Update: Realloc failed"); return 0; }
+            if (p == NULL) { ICD_T("memResize: realloc failed, bytes", size); wglOglError("Mem: Update: Realloc failed"); return 0; }
         } else {
             p = dp->malloc(size + 0x1f);
             if (p == NULL) { wglOglError("Mem: Update: Malloc failed"); return 0; }
