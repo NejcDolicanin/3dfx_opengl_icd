@@ -381,7 +381,7 @@ void __fastcall hwGenVertexArrayFill(__GLcontext *gc)
       }
       else {
         EMIT(og_mov(gc, R(eax), MEM(&blk->normalPtr)));
-        pc = CopyNormal(gc, pc, va->normal.type, IMM(&blk->fetchTmp));
+        pc = CopyNormal(gc, pc, va->normal.type, MEM(&blk->fetchTmp));     /* fix: was IMM: broken GL_BYTE / GL_SHORT normals */
         EMIT(og_sub(gc, R(eax), IMM(va->normal.stride)));
         EMIT(og_mov(gc, MEM(&blk->normalPtr), R(eax)));
       }
@@ -395,7 +395,7 @@ void __fastcall hwGenVertexArrayFill(__GLcontext *gc)
         }
         else {
           EMIT(og_mov(gc, R(eax), MEM(&blk->fogPtr)));
-          pc = CopyFogCoord(gc, pc, va->fogCoord.type, IMM(&blk->fetchTmp));
+          pc = CopyFogCoord(gc, pc, va->fogCoord.type, MEM(&blk->fetchTmp));   /* fix: was IMM */
           EMIT(og_sub(gc, R(eax), IMM(va->fogCoord.stride)));
           EMIT(og_mov(gc, MEM(&blk->fogPtr), R(eax)));
         }

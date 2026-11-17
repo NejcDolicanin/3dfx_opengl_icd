@@ -136,9 +136,10 @@ GLubyte *__fastcall CopyColor(__GLcontext *gc, GLubyte *pc, GLenum type, GLuint 
     } else {
       if (size == 3) {
         if ((*gc->polygon.shader.getModeFlags)(gc) & __GL_SHADE_NEEDS_ALPHA) {
-          /* original bug: the integer value of alphaScale (255 -> 3.6e-43f), not its float bits as
-          ** in the clamped path above */
-          EMIT(og_mov(gc, R(ebx), IMM((GLint)gc->constants.alphaScale)));
+          /* the float bits of alphaScale, as in the clamped path above (fix: the original stored its integer
+          ** value, 255 = 3.6e-43f, so the alpha was about 0) */
+          od_f.u[3].f = gc->constants.alphaScale;
+          EMIT(og_mov(gc, R(ebx), IMM(od_f.u[3].i)));
           EMIT(og_mov(gc, og_mem(gc, IMM(VX(colors[0].a)), R(edi), NULL, 1), R(ebx)));
         }
       }

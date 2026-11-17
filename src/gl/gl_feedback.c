@@ -174,13 +174,15 @@ void __fastcall Feedback(__GLcontext *gc, __GLvertexICD *v)
       case GL_4D_COLOR_TEXTURE:
 	{
 	    GLuint modeFlags = __GL_SHADE_MODEFLAGS(gc);
-	    __GLfloat tx = v->texture[0].x;
-	    __GLfloat ty = v->texture[0].y;
-	    __GLfloat tw = v->texture[0].w;
+	    __GLfloat tx, ty, tw;
 
 	    if ((v->flagBits & __GL_HAS_TEXTURE) == 0) {
 		DO_VALIDATE(gc, v, (*(__GLgetNeedsProc)gc->vertex.getNeeds)(gc) | __GL_HAS_TEXTURE);
 	    }
+	    /* fix: read after the validation (the original read them first: stale coordinates) */
+	    tx = v->texture[0].x;
+	    ty = v->texture[0].y;
+	    tw = v->texture[0].w;
 
 	    /* Undo projection */
 	    if (modeFlags & __GL_SHADE_PROJSCALED_TEXTURE) {

@@ -22,6 +22,20 @@
 /* a label's name for the generator's listing: __GLogOperand +0x10 (og.h has it as unused10) */
 #define OG_NAME(l)      (*(const char **)&(l)->unused10)
 
+/* hwOgBigPoint: the point of size != 1 of the generated glBegin code.  Fix: the original called the round alpha
+** disc (__glSSTRenderBigPoint fullscreen, __glSSTRenderWideAAPoint windowed) whatever the state; the point proc
+** hwPickRenderProcs chose knows GL_POINT_SMOOTH, texturing and the alpha test, so use that one when it is a
+** hardware proc */
+static void __fastcall hwOgBigPoint(__GLcontext *gc, __GLvertexICD *v)
+{
+    if (!gc->hwcx.swPoints)
+        ((void (__fastcall *)(__GLcontext *, __GLvertexICD *))gc->procs.renderPoint)(gc, v);
+    else if (gc->hwcx.windowed != 0)
+        __glSSTRenderWideAAPoint(gc, v);
+    else
+        __glSSTRenderBigPoint(gc, v);
+}
+
 /* 6902431b -- og_genRenderPrim: generates the render-primitive entry of one primitive type (sst_primgen.c header) */
 void __fastcall og_genRenderPrim(__GLcontext *gc, GLubyte *pc, GLuint prim, char bigPoint)
 {
@@ -281,10 +295,7 @@ EMIT(og_shr(gc, R(eax), IMM(0x1f)));
     case 0:
         if (bigPoint) {
             EMIT(og_mov(gc, R(ecx), IMM(gc)));
-            if (gc->hwcx.windowed != 0)
-                pc = og_callRel32(gc, pc, (GLuint)__glSSTRenderWideAAPoint);
-            else
-                pc = og_callRel32(gc, pc, (GLuint)__glSSTRenderBigPoint);
+            pc = og_callRel32(gc, pc, (GLuint)hwOgBigPoint);
         } else {
             EMIT(og_push(gc, R(edx)));
             EMIT(og_call(gc, draw));

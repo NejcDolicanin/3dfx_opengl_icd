@@ -156,7 +156,7 @@ void __fastcall __glDoPolygonClip(__GLcontext *gc, __GLvertexICD **iv, GLint nou
 
 	    p0 = *ovp++;
 
-	    wInv = __GL_ONE_F / p0->clip.w;
+	    wInv = p0->clip.w != 0.0f ? __GL_ONE_F / p0->clip.w : 0.0f;    /* fix: the SI's zero test */
 	    winx = (__GLfloat)(p0->clip.x) * wInv * vpXScale + vpXCenter;
 	    winy = (__GLfloat)(p0->clip.y) * wInv * vpYScale + vpYCenter;
 	    p0->window.z = (__GLfloat)(p0->clip.z) * wInv * vpZScale + vpZCenter;

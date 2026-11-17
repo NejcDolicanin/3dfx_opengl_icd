@@ -237,9 +237,9 @@ void __fastcall hwGenLockedTriangles(__GLcontext *gc)
     LABEL(xformLoop);
     if (gc->constants.cpuCaps & __GL_CPU_SSE) {
         /* SSE: four vertices: clip = mvp * (x, y, z, 1) with x, y, z transposed into xmm4 / xmm5 / xmm6.
-           Original bugs: the prefetch address is edx + 0x80 (edx = the vertex number, not esi), and esi steps
-           0x40 per group whatever vertex.stride is (right only for 16-byte vertices) */
-        EMIT(og_prefetch(gc, MEMR(0x80, edx), IMM(1)));
+           Fixes: the prefetch is from esi (the original used edx, the vertex number), and esi steps four strides
+           per group at the end of the loop (the original added 0x40, right only for 16-byte vertices) */
+        EMIT(og_prefetch(gc, MEMR(0x80, esi), IMM(1)));
         EMIT(og_mov(gc, R(eax), MEM(&gc->vertexArray.vertex.stride)));
         EMIT(og_mov(gc, R(ecx), R(esi)));
         EMIT(og_movlps(gc, R(mm4), MEM0(esi)));
@@ -366,7 +366,7 @@ void __fastcall hwGenLockedTriangles(__GLcontext *gc)
         EMIT(og_movaps(gc, HWV(HW_Y, edx), R(mm5)));
         EMIT(og_movaps(gc, HWV(HW_Z, edx), R(mm6)));
         EMIT(og_movaps(gc, HWV(HW_W, edx), R(mm7)));
-        EMIT(og_add(gc, R(esi), IMM(0x40)));
+        EMIT(og_lea(gc, R(esi), IDX(0, esi, eax, 4)));       /* eax = vertex.stride, loaded at the top of the loop */
         EMIT(og_add(gc, R(edx), IMM(4)));
         EMIT(og_cmp(gc, R(edx), MEM(&gc->vertexArray.lockCount)));
         EMIT(og_jl(gc, xformLoop));

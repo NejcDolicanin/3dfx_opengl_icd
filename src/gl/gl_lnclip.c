@@ -1,7 +1,7 @@
 /*
 ** gl_lnclip.c -- line clipping (s_lnclip.c), written from the SGI Sample Implementation source
 ** with the ICD's vertex: clip codes in flagBits >> 16, validateVertex[] indexed by
-** (flagBits >> 14) & 3, no zero test on clip.w, and the flat colour also moves the packed colour.
+** (flagBits >> 14) & 3, and the flat colour also moves the packed colour.
 */
 #include "wglpriv.h"
 #include "icdprotos.h"
@@ -212,7 +212,7 @@ void __fastcall __glClipLine(__GLcontext *gc, __GLvertexICD *a, __GLvertexICD *b
     vpZScale = vp->scale.z;
 
     /* Compute window coordinates for both vertices. */
-    wInv = __GL_ONE_F / a->clip.w;
+    wInv = a->clip.w != 0.0f ? __GL_ONE_F / a->clip.w : 0.0f;      /* fix: the SI's zero test */
     a->window.z = (__GLfloat)(a->clip.z) * wInv * vpZScale + vpZCenter;
     a->window.w = wInv;
     a->window.x = (__GLfloat)(a->clip.x) * wInv * vpXScale + vpXCenter;
@@ -224,7 +224,7 @@ void __fastcall __glClipLine(__GLcontext *gc, __GLvertexICD *a, __GLvertexICD *b
 	a->texture[0].w *= a->window.w;
     }
 
-    wInv = __GL_ONE_F / b->clip.w;
+    wInv = b->clip.w != 0.0f ? __GL_ONE_F / b->clip.w : 0.0f;
     b->window.z = (__GLfloat)(b->clip.z) * wInv * vpZScale + vpZCenter;
     b->window.w = wInv;
     /* b->window.w, not wInv (the same value, kept in the register): read here, it makes the texture

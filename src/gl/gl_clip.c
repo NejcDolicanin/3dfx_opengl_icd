@@ -16,7 +16,7 @@
 /* ---- s_clip.c: the parameter clip procs (gc->procs.lineClipParam / polyClipParam) -----------------
 ** dst = b + t * (a - b) for the clip coordinates and whatever parameters the variant carries
 ** (I = CI front index, C = RGBA front colour, B = the back colour too, F = fog, T = texture).
-** The ICD differs from the SI: window.w = 1 / clip.w without the clip.w == 0 check, the fog
+** The ICD differs from the SI: the fog
 ** variants also interpolate fogCoord (EXT_fog_coord), and the texture variants do two units.
 ** The projected-texture variants (PT) follow the others. */
 #define __GL_CLIP_LERP(field) \
@@ -24,7 +24,7 @@
 #define __GL_CLIP_POS \
     w = (a->clip.w - b->clip.w) * t + b->clip.w; \
     dst->clip.w = w; \
-    dst->window.w = 1.0f / w; \
+    dst->window.w = w != 0.0f ? 1.0f / w : 0.0f; \
     __GL_CLIP_LERP(clip.x); \
     __GL_CLIP_LERP(clip.y); \
     __GL_CLIP_LERP(clip.z); \
@@ -77,7 +77,7 @@ void __fastcall name(__GLvertexICD *dst, __GLvertexICD *a, __GLvertexICD *b, __G
                                                                                             \
     w = (a->clip.w - b->clip.w) * t + b->clip.w;                                            \
     dst->clip.w = w;                                                                        \
-    dst->window.w = __GL_ONE_F / w;                                                         \
+    dst->window.w = w != 0.0f ? __GL_ONE_F / w : 0.0f;                                      \
     LERP(clip.x);                                                                       \
     LERP(clip.y);                                                                       \
     LERP(clip.z);                                                                       \
@@ -248,7 +248,7 @@ void __fastcall ClipT2(__GLvertexICD *dst, __GLvertexICD *a, __GLvertexICD *b, _
 
     w = (a->clip.w - b->clip.w) * t + b->clip.w;
     dst->clip.w = w;
-    dst->window.w = 1.0f / w;
+    dst->window.w = w != 0.0f ? 1.0f / w : 0.0f;
     dst->clip.x = (a->clip.x - b->clip.x) * t + b->clip.x;
     dst->clip.y = (a->clip.y - b->clip.y) * t + b->clip.y;
     dst->clip.z = (a->clip.z - b->clip.z) * t + b->clip.z;
@@ -311,7 +311,7 @@ void __fastcall ClipIT2(__GLvertexICD *dst, __GLvertexICD *a, __GLvertexICD *b, 
 
     w = (a->clip.w - b->clip.w) * t + b->clip.w;
     dst->clip.w = w;
-    dst->window.w = 1.0f / w;
+    dst->window.w = w != 0.0f ? 1.0f / w : 0.0f;
     dst->clip.x = (a->clip.x - b->clip.x) * t + b->clip.x;
     dst->clip.y = (a->clip.y - b->clip.y) * t + b->clip.y;
     dst->clip.z = (a->clip.z - b->clip.z) * t + b->clip.z;
@@ -375,7 +375,7 @@ void __fastcall ClipBIT2(__GLvertexICD *dst, __GLvertexICD *a, __GLvertexICD *b,
 
     w = (a->clip.w - b->clip.w) * t + b->clip.w;
     dst->clip.w = w;
-    dst->window.w = 1.0f / w;
+    dst->window.w = w != 0.0f ? 1.0f / w : 0.0f;
     dst->clip.x = (a->clip.x - b->clip.x) * t + b->clip.x;
     dst->clip.y = (a->clip.y - b->clip.y) * t + b->clip.y;
     dst->clip.z = (a->clip.z - b->clip.z) * t + b->clip.z;
@@ -440,7 +440,7 @@ void __fastcall ClipCT2(__GLvertexICD *dst, __GLvertexICD *a, __GLvertexICD *b, 
 
     w = (a->clip.w - b->clip.w) * t + b->clip.w;
     dst->clip.w = w;
-    dst->window.w = 1.0f / w;
+    dst->window.w = w != 0.0f ? 1.0f / w : 0.0f;
     dst->clip.x = (a->clip.x - b->clip.x) * t + b->clip.x;
     dst->clip.y = (a->clip.y - b->clip.y) * t + b->clip.y;
     dst->clip.z = (a->clip.z - b->clip.z) * t + b->clip.z;
@@ -507,7 +507,7 @@ void __fastcall ClipBCT2(__GLvertexICD *dst, __GLvertexICD *a, __GLvertexICD *b,
 
     w = (a->clip.w - b->clip.w) * t + b->clip.w;
     dst->clip.w = w;
-    dst->window.w = 1.0f / w;
+    dst->window.w = w != 0.0f ? 1.0f / w : 0.0f;
     dst->clip.x = (a->clip.x - b->clip.x) * t + b->clip.x;
     dst->clip.y = (a->clip.y - b->clip.y) * t + b->clip.y;
     dst->clip.z = (a->clip.z - b->clip.z) * t + b->clip.z;

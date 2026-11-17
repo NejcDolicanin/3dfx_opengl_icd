@@ -6,11 +6,12 @@
 #include "wglpriv.h"
 #include "icdprotos.h"
 #include "glsi.h"
+#include "glshade.h"
 
 #define KEY_WORDS   23      /* = the bufRec[2] keySize 0x5c (wgldev.c) */
 
 /* 69056f40 -- make_key (GEOM_OG.C), rewritten as a fixed 23-dword key (0x5c bytes, all of them written):
-**   [0]      bit per texture unit: textureEnabled
+**   [0]      bit per texture unit: textureEnabled; from bit 2, two bits per enabled unit: its texture target
 **   [1]      enableFlags of the vertex, normal, colour, index, fog-coordinate arrays and the texture
 **            coordinate arrays of the enabled units
 **   [2]      vertexArray.formats
@@ -18,7 +19,7 @@
 **   [8..11]  per enabled unit: texFormats, the texture-coordinate stride
 **   [12]     bit per unit: texgen enabled;  [13] bit per unit: the texture matrix is the identity
 **   [14]     the modelview's mvp matrixType;  [15] enabled clip planes;  [16] lighting
-**   [17]     hints.ext590;  [18] a polygon mode is not GL_FILL;  [19] hwcx.nonUnityQ
+**   [17]     hints.ext590;  [18] bit 0 a polygon mode is not GL_FILL, bit 1 alpha needed;  [19] hwcx.nonUnityQ
 **   [20]     what_needs & (packed colour | eye | normal | texture | front colour)
 **   [21]     the fullscreen guard band without fog;  [22] fog from the fog-coordinate array
 ** Its only caller (hwGenVertexArrayFill) passes a 23-dword frame buffer at [ebp-0xcc, ebp-0x70). */
@@ -39,6 +40,11 @@ void __fastcall make_key(GLuint *key, __GLcontext *gc)
   }
   for (od_f.unit = 0; od_f.unit < 2; od_f.unit++) {
     key[0] = key[0] | ((gc->texture.textureEnabled[od_f.unit] != 0) << od_f.unit);
+    /* fix: the routine addresses boundTexture[unit][currentIndex] for the texture scale, so the target (1D / 2D)
+    ** belongs to the key */
+    if (gc->texture.textureEnabled[od_f.unit] != 0) {
+      key[0] = key[0] | ((gc->texture.currentIndex[od_f.unit] & 3) << (2 + od_f.unit * 2));
+    }
   }
 
   od_f.arrays = gc->vertexArray.enableFlags;
@@ -94,6 +100,9 @@ void __fastcall make_key(GLuint *key, __GLcontext *gc)
   key[od_f.k] = gc->state.hints.ext590;
   od_f.k = od_f.k + 1;
   key[od_f.k] = (gc->state.polygon.frontMode != GL_FILL || gc->state.polygon.backMode != GL_FILL);
+  /* fix: CopyColor writes the alpha only with __GL_SHADE_NEEDS_ALPHA (blending / alpha test), so that is part of
+  ** the key: a routine made with blending off was reused after glEnable(GL_BLEND) */
+  key[od_f.k] = key[od_f.k] | ((((*gc->polygon.shader.getModeFlags)(gc) & __GL_SHADE_NEEDS_ALPHA) != 0) << 1);
   od_f.k = od_f.k + 1;
   key[od_f.k] = gc->hwcx.nonUnityQ;
   od_f.k = od_f.k + 1;

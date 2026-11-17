@@ -427,7 +427,7 @@ GLubyte *__fastcall hwBuildIndexedTriangles(__GLcontext *gc, int unused)
     if (start != 0)
         return start;
     start = hwPageCacheInsert(gc, &gc->hwcx.bufRec[3], &key, &blk);
-    blk->vtxBuffer = ((void *(__fastcall *)(__GLcontext *, int))gc->imports[0])(gc, 24000);
+    blk->vtxBuffer = NULL;      /* fix: the original allocated 24,000 bytes here per cached routine and never used them */
     og_reset(gc);
     loop = og_newFixup(gc);
     clipDone = og_newFixup(gc);
@@ -783,11 +783,11 @@ GLubyte *__fastcall hwBuildImmProc(__GLcontext *gc, GLuint n)
             EMIT(og_movd(gc, R(mm2), MEMR(0x20, ecx)));
             EMIT(og_movd(gc, R(mm3), MEMR(0x30, ecx)));
             if (n == 2) {
+                /* (fix: z is 0 here; the original added m22 unmultiplied) */
                 EMIT(og_pfmul(gc, R(mm0), MEM0(eax)));
                 EMIT(og_pfmul(gc, R(mm1), MEMR(4, eax)));
-                EMIT(og_pfadd(gc, R(mm2), R(mm3)));
                 EMIT(og_pfadd(gc, R(mm0), R(mm1)));
-                EMIT(og_pfadd(gc, R(mm0), R(mm2)));
+                EMIT(og_pfadd(gc, R(mm0), R(mm3)));
             } else if (n == 3) {
                 EMIT(og_pfmul(gc, R(mm0), MEM0(eax)));
                 EMIT(og_pfmul(gc, R(mm1), MEMR(4, eax)));

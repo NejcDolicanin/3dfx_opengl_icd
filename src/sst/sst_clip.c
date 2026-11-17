@@ -103,7 +103,7 @@ void __fastcall hwClipInterpolate(__GLcontext *gc, __GLvertexICD *a, __GLvertexI
         out->flagBits |= (*(GLuint *)&d >> 15) & __GL_CLIP_LEFT;
     }
     if (!(out->flagBits & __GL_CLIP_NEAR)) {
-        out->window.w = 1.0f / out->clip.w;
+        out->window.w = out->clip.w != 0.0f ? 1.0f / out->clip.w : 0.0f;    /* fix: zero test */
         out->window.x = out->window.w * gc->state.viewport.scale.x * out->clip.x + gc->state.viewport.center.x;
         out->window.y = (gc->state.viewport.scale.y * out->clip.y) * out->window.w + gc->state.viewport.center.y;
         out->window.z = out->window.w * gc->state.viewport.scale.z * out->clip.z + gc->state.viewport.center.z;

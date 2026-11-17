@@ -91,10 +91,12 @@ void __stdcall __glim_EdgeFlagPointer(GLint stride, const GLboolean *pointer)
     __GL_DELAY_VALIDATE_MASK(gc, __GL_DIRTY_VERTARRAY);
 }
 
-/* 690b17c0 -- CopyEdgeFlag (s_varray.c): OR the edge flag bit into flagBits if *ep is set (SI: boundaryEdge = *ep) */
+/* 690b17c0 -- CopyEdgeFlag (s_varray.c): the vertex's edge flag bit = *ep (fix: the original only ORed it in, so a
+** GL_FALSE in the array never cleared it) */
 void __fastcall CopyEdgeFlag(__GLcontext *gc, const GLboolean *ep, __GLvertexICD *v)
 {
-    v->flagBits |= ep[0] ? __GL_VERTEX_EDGE_FLAG : 0;
+    if (ep[0]) v->flagBits |= __GL_VERTEX_EDGE_FLAG;
+    else v->flagBits &= ~__GL_VERTEX_EDGE_FLAG;
 }
 
 /* 690b17e0 -- __gllc_ArrayElement (s_varray.c): the elements are fetched while compiling */

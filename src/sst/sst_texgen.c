@@ -104,9 +104,9 @@ GLubyte *__fastcall og_windowTransform(__GLcontext *gc, GLubyte *pc)
         return og_encode(gc, pc, og_movss(gc, MEMR(VX(window.w), ebp), R(mm1)));  /* overwritten with 1/w */
     }
 
-    /* x87, st0 = 1/w.  CLIP_NEAR: clip y, z, x * 1/w.  The last fmulp overwrites 1/w with x, so this path
-       leaves three values instead of four and the caller's fstp to window.w pops an empty register
-       (original bug: window.w of a near-clipped vertex gets the x87 indefinite) */
+    /* x87, st0 = 1/w.  CLIP_NEAR: clip z, y, x * 1/w, leaving st0..st3 = z, y, x, 1/w like the other cases.
+       (Fix: the original multiplied x into the 1/w slot and popped, so the caller's fstp to window.w found an
+       empty register: window.w of a near-clipped vertex was the x87 indefinite) */
     EMIT(og_test(gc, R(esi), IMM(CLIP_NEAR)));
     EMIT(og_je(gc, texDiv));
     EMIT(og_fld(gc, MEMR(VX(clip.y), ebp)));
@@ -114,7 +114,9 @@ GLubyte *__fastcall og_windowTransform(__GLcontext *gc, GLubyte *pc)
     EMIT(og_fld(gc, MEMR(VX(clip.z), ebp)));
     EMIT(og_fmul(gc, R(st2)));
     EMIT(og_fld(gc, MEMR(VX(clip.x), ebp)));
-    EMIT(og_fmulp(gc, R(st3), R(st0)));
+    EMIT(og_fmul(gc, R(st3)));                              /* x, z, y, 1/w */
+    EMIT(og_fxch(gc, R(st2)));                              /* y, z, x, 1/w */
+    EMIT(og_fxch(gc, R(st1)));                              /* z, y, x, 1/w */
     EMIT(og_jmp(gc, toWindow));
 
     /* the texture coordinates and clip z, y, x times 1/w, each texture value stored as soon as the
@@ -213,25 +215,42 @@ GLubyte *__fastcall og_windowTransform(__GLcontext *gc, GLubyte *pc)
         }
     } else {
         if (gc->texture.textureEnabled[1]) {
-            /* unit 1 alone: q is divided whether or not nonUnityQ */
-            EMIT(og_fld(gc, MEMR(VX(texture[1].x), ebp)));
-            EMIT(og_fmul(gc, R(st1)));
-            EMIT(og_fld(gc, MEMR(VX(texture[1].y), ebp)));
-            EMIT(og_fmul(gc, R(st2)));
-            EMIT(og_fld(gc, MEMR(VX(texture[1].w), ebp)));
-            EMIT(og_fmul(gc, R(st3)));
-            EMIT(og_fld(gc, MEMR(VX(clip.z), ebp)));
-            EMIT(og_fmul(gc, R(st4)));
-            EMIT(og_fld(gc, MEMR(VX(clip.y), ebp)));
-            EMIT(og_fmul(gc, R(st5)));
-            EMIT(og_fld(gc, MEMR(VX(clip.x), ebp)));
-            EMIT(og_fmul(gc, R(st6)));
-            EMIT(og_fxch(gc, R(st5)));
-            EMIT(og_fstp(gc, MEMR(VX(texture[1].x), ebp)));
-            EMIT(og_fxch(gc, R(st3)));
-            EMIT(og_fstp(gc, MEMR(VX(texture[1].y), ebp)));
-            EMIT(og_fxch(gc, R(st1)));
-            EMIT(og_fstp(gc, MEMR(VX(texture[1].w), ebp)));
+            /* unit 1 alone (fix: q is divided only with a non-unit q, as for unit 0) */
+            if (gc->hwcx.nonUnityQ) {
+                EMIT(og_fld(gc, MEMR(VX(texture[1].x), ebp)));
+                EMIT(og_fmul(gc, R(st1)));
+                EMIT(og_fld(gc, MEMR(VX(texture[1].y), ebp)));
+                EMIT(og_fmul(gc, R(st2)));
+                EMIT(og_fld(gc, MEMR(VX(texture[1].w), ebp)));
+                EMIT(og_fmul(gc, R(st3)));
+                EMIT(og_fld(gc, MEMR(VX(clip.z), ebp)));
+                EMIT(og_fmul(gc, R(st4)));
+                EMIT(og_fld(gc, MEMR(VX(clip.y), ebp)));
+                EMIT(og_fmul(gc, R(st5)));
+                EMIT(og_fld(gc, MEMR(VX(clip.x), ebp)));
+                EMIT(og_fmul(gc, R(st6)));
+                EMIT(og_fxch(gc, R(st5)));
+                EMIT(og_fstp(gc, MEMR(VX(texture[1].x), ebp)));
+                EMIT(og_fxch(gc, R(st3)));
+                EMIT(og_fstp(gc, MEMR(VX(texture[1].y), ebp)));
+                EMIT(og_fxch(gc, R(st1)));
+                EMIT(og_fstp(gc, MEMR(VX(texture[1].w), ebp)));
+            } else {
+                EMIT(og_fld(gc, MEMR(VX(texture[1].x), ebp)));
+                EMIT(og_fmul(gc, R(st1)));
+                EMIT(og_fld(gc, MEMR(VX(texture[1].y), ebp)));
+                EMIT(og_fmul(gc, R(st2)));
+                EMIT(og_fld(gc, MEMR(VX(clip.z), ebp)));
+                EMIT(og_fmul(gc, R(st3)));
+                EMIT(og_fld(gc, MEMR(VX(clip.y), ebp)));
+                EMIT(og_fmul(gc, R(st4)));
+                EMIT(og_fld(gc, MEMR(VX(clip.x), ebp)));
+                EMIT(og_fmul(gc, R(st5)));
+                EMIT(og_fxch(gc, R(st4)));
+                EMIT(og_fstp(gc, MEMR(VX(texture[1].x), ebp)));
+                EMIT(og_fxch(gc, R(st2)));
+                EMIT(og_fstp(gc, MEMR(VX(texture[1].y), ebp)));
+            }
         } else {
             EMIT(og_fld(gc, MEMR(VX(clip.z), ebp)));
             EMIT(og_fmul(gc, R(st1)));

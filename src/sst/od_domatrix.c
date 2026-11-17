@@ -15,8 +15,7 @@
 ** z = 0, w = 1; 3: w = 1) and the matrix at [ecx], shaped by its type: __GL_MT_IS2DNR / IDENTITY / IS2DNRSC
 ** scale and translate only (__glXForm*_2DNRW), anything else is the full product.  3DNow (cpuCaps & 2), SSE
 ** (& 4; og_movss = movss) or x87.  Unlike the ancestor (which returned w on the x87 stack) every path stores
-** w to outw; mat is unused (the caller emits the load of ecx).  The 2DNR paths leave outz unwritten for a
-** 2-component vertex, as the ancestor does. */
+** w to outw; mat is unused (the caller emits the load of ecx). */
 #pragma optimize("", off)
 GLubyte *__fastcall doMatrix(__GLcontext *gc, GLubyte *pc, OgOperand *outx, OgOperand *outy, OgOperand *outz,
                                  OgOperand *outw, GLenum matrixType, const __GLfloat *mat, GLuint vertexSize)
@@ -53,6 +52,8 @@ GLubyte *__fastcall doMatrix(__GLcontext *gc, GLubyte *pc, OgOperand *outx, OgOp
                 EMIT(og_pfadd(gc, R(mm1), R(mm3)));
                 EMIT(og_movd(gc, outx, R(mm0)));
                 EMIT(og_movd(gc, outy, R(mm1)));
+                EMIT(og_movd(gc, R(mm4), MAT(3, 2)));       /* fix: z' = m32 (z is 0); was left unwritten */
+                EMIT(og_movd(gc, outz, R(mm4)));
             } else if (vertexSize == 3) {
                 EMIT(og_movd(gc, R(mm0), x));
                 EMIT(og_movd(gc, R(mm1), y));
@@ -214,6 +215,8 @@ GLubyte *__fastcall doMatrix(__GLcontext *gc, GLubyte *pc, OgOperand *outx, OgOp
                 EMIT(og_addss(gc, R(mm1), R(mm3)));
                 EMIT(og_movss(gc, outx, R(mm0)));
                 EMIT(og_movss(gc, outy, R(mm1)));
+                EMIT(og_movss(gc, R(mm6), MAT(3, 2)));      /* fix: z' = m32 (z is 0); was left unwritten */
+                EMIT(og_movss(gc, outz, R(mm6)));
             } else if (vertexSize == 3) {
                 EMIT(og_movss(gc, R(mm0), x));
                 EMIT(og_movss(gc, R(mm1), y));
@@ -408,6 +411,8 @@ GLubyte *__fastcall doMatrix(__GLcontext *gc, GLubyte *pc, OgOperand *outx, OgOp
                 EMIT(og_fxch(gc, R(st1)));
                 EMIT(og_fstp(gc, outx));
                 EMIT(og_fstp(gc, outy));
+                EMIT(og_fld(gc, MAT(3, 2)));                /* fix: z' = m32 (z is 0); was left unwritten */
+                EMIT(og_fstp(gc, outz));
             } else if (vertexSize == 3) {
                 EMIT(og_fld(gc, x));
                 EMIT(og_fmul(gc, MAT(0, 0)));
@@ -530,12 +535,8 @@ GLubyte *__fastcall doMatrix(__GLcontext *gc, GLubyte *pc, OgOperand *outx, OgOp
             EMIT(og_fxch(gc, R(st2)));
             EMIT(og_fstp(gc, outz));
             EMIT(og_faddp(gc, R(st1), R(st0)));
-            /* the ancestor's "IS2D caller expects no w on the stack" pop, kept although w is stored next:
-            ** for an IS2D matrix and a 2- or 3-component vertex this fstp pops an empty x87 stack (an
-            ** original bug: outw gets the invalid-operation NaN) */
-            if (w == NULL && matrixType == __GL_MT_IS2D) {
-                EMIT(og_fstp(gc, R(st0)));
-            }
+            /* (fix: the ancestor popped w here for an IS2D matrix and a 2- or 3-component vertex, and the fstp
+            ** below then stored from an empty x87 stack: clip.w was a NaN) */
             EMIT(og_fstp(gc, outw));
         }
     }

@@ -195,9 +195,8 @@ GLubyte *__fastcall hwCopyTexCoords(__GLcontext *gc, GLubyte *pc)
    holds 2 bits per element (0 zero, 3 one), `mask` 2 bits per vector component; terms known to be zero are
    skipped, a 1 drops the multiply.  The loop runs on the original's four induction variables (`row`
    becomes the matrix-bit shift).
-   Original quirk kept: an all-zero row loads its 0.0 from `row`'s own stack slot, an address in this
-   generator's frame baked into the generated code; when the routine runs that slot holds whatever is
-   there then (the right 0.0 only by chance). */
+   An all-zero row loads a 0.0 constant (fix: the original baked in the address of `row`'s own stack slot in this
+   generator's frame, which holds anything by the time the routine runs). */
 GLubyte *__fastcall og_genMatrixRow(__GLcontext *gc, GLubyte *pc, GLint row, GLuint *m, GLuint mask)
 {
     GLuint vs, vo, mo;
@@ -224,6 +223,5 @@ GLubyte *__fastcall og_genMatrixRow(__GLcontext *gc, GLubyte *pc, GLint row, GLu
             EMIT(og_faddp(gc, R(st1), R(st0)));
         return pc;
     }
-    row = 0;
-    return og_encode(gc, pc, og_fld(gc, MEM(&row)));
+    return og_encode(gc, pc, og_fld(gc, FPK(0.0)));
 }

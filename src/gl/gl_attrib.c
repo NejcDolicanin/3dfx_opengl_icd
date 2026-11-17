@@ -691,8 +691,7 @@ void __fastcall DrawVerticesLLoop(__GLcontext *gc, GLint first, GLsizei count, G
 
 /* 690b0470 (size 403): DrawVerticesPolygon (drawArrays[GL_POLYGON]): refill the vertex cache if dirty, then
 ** draw the polygon (count >= 3) as a fan of renderTriangle / clip-triangle calls around the first vertex (also the
-** provoking one), clearing the edge flags of the interior fan edges for each triangle and restoring them after;
-** a trivially rejected triangle `continue`s past the restore, leaving those edge flags cleared */
+** provoking one), clearing the edge flags of the interior fan edges for each triangle and restoring them after */
 void __fastcall DrawVerticesPolygon(__GLcontext *gc, GLint first, GLsizei count, GLuint *elements)
 {
     __GLvertexICD *vBuf;
@@ -741,7 +740,7 @@ void __fastcall DrawVerticesPolygon(__GLcontext *gc, GLint first, GLsizei count,
 	    (*gc->procs.renderTriangle)(gc, v0, v1, v2);
 	} else if (v0->flagBits & v1->flagBits & v2->flagBits &
 		   __GL_CLIP_ALL_MASK) {
-	    continue; /* cull -or- trivial reject */
+	    ;   /* cull -or- trivial reject (fix: the original's `continue` skipped the edge flag restore below) */
 	} else {
 	    __glVarrayClipTriangle(gc, v0, v1, v2);
 	}

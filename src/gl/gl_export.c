@@ -174,10 +174,12 @@ GLboolean __fastcall ApplyViewport(__GLcontext *gc)
     return GL_FALSE;
 }
 
-/* 69079860 -- ApplyScissor (S_EXPORT.C): CheckViewport if __glFindWindowSize finds the size (then GL_TRUE) */
+/* 69079860 -- ApplyScissor (S_EXPORT.C): as ApplyViewport (fix: the original left __glUpdateViewport out, the SI
+** has it) */
 GLboolean __fastcall ApplyScissor(__GLcontext *gc)
 {
     if (__glFindWindowSize(gc) == GL_TRUE) {
+        __glUpdateViewport(gc);
         CheckViewport(gc);
         return GL_TRUE;
     }

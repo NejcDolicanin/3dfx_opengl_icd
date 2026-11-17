@@ -506,9 +506,9 @@ done:
 ** 6904d270 -- hwCanDrawLockedTriangles: can the locked GL_TRIANGLES arrays go through the generated draw proc
 ** (hwcx.genProc8)? Direct FIFO, filled polygons both faces, no lighting-ish 0x40 / 0x20 enables, no clip planes,
 ** GL_RENDER, only vertex (3 floats), colour (4 ubytes, stride 4) and 2-float texcoords (stride 8) per
-** enabled unit (`en ? (va & bit) : 1` gives the original's mov/and/test), no texgen, a model-view type that is not
-** 3..5 (the original compares the address of the matrix's type word), the 0x1c0000 enables only with 0x100000, and
-** q always 1.
+** enabled unit (`en ? (va & bit) : 1` gives the original's mov/and/test), no texgen, the 0x1c0000 enables only with 0x100000, and
+** q always 1.  (The original also compared the address of the model-view's type word with 3, 4 and 5, a test that
+** never failed; dropped -- the transform handles any matrix.)
 */
 GLint __fastcall hwCanDrawLockedTriangles(__GLcontext *gc)
 {
@@ -538,9 +538,6 @@ GLint __fastcall hwCanDrawLockedTriangles(__GLcontext *gc)
         (!(va & 0x20000) || (gc->vertexArray.texture.size[1] == 2 && gc->vertexArray.texture.type[1] == GL_FLOAT &&
                              gc->vertexArray.texture.stride[1] == 8)) &&
         !((gc->state.enables.texture[1] | gc->state.enables.texture[0]) & (__GL_TEXTURE_GEN_S_ENABLE | __GL_TEXTURE_GEN_T_ENABLE)) &&
-        (GLint)((GLubyte *)gc->transform.modelView + 0xc0) != 3 &&
-        (GLint)((GLubyte *)gc->transform.modelView + 0xc0) != 5 &&
-        (GLint)((GLubyte *)gc->transform.modelView + 0xc0) != 4 &&
         ok && !gc->hwcx.nonUnityQ) {
         return 1;
     }

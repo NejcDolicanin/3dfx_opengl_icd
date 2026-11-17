@@ -11,9 +11,7 @@
 #define VX(m)           ((GLint)&((__GLvertexICD *)0)->m)
 
 /* 69056a60 -- CopyNormal (GEOM_OG.C): emit the copy of the normal at [eax] (array type `type`) to the
-** vertex at edi: three dword moves through ebx for GL_FLOAT, else conv_load + FAC scale per component.
-** hwGenVertexArrayFill passes an immediate operand as `work`, which og_encModrm cannot encode: the GL_BYTE /
-** GL_SHORT loads (mov work, ebx; fild work) come out broken (original bug). */
+** vertex at edi: three dword moves through ebx for GL_FLOAT, else conv_load + FAC scale per component. `work` is a memory scratch dword. */
 #pragma optimize("", off)
 GLubyte *__fastcall CopyNormal(__GLcontext *gc, GLubyte *pc, GLenum type, OgOperand *work)
 {
