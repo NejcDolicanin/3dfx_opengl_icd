@@ -213,7 +213,8 @@ void __fastcall hwCalcColorFront(__GLcontext *gc, __GLvertexICD *vx)
                     att = lsm->attenuation;
                 } else {
                     dist = (__GLfloat)sqrt(vPli.x*vPli.x + vPli.y*vPli.y + vPli.z*vPli.z);
-                    att = 1.0f / (k0 + (k1 + k2 * dist) * dist);
+                    dist = k0 + (k1 + k2 * dist) * dist;
+                    att = dist != zero ? 1.0f / dist : 1.0f;     /* fix: no zero test in the original */
                 }
             } else {
                 att = 1.0f;

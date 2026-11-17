@@ -79,7 +79,7 @@ void __fastcall __glInitPacker(__GLcontext *gc, __GLpixelSpanInfoICD *spanInfo)
     spanInfo->applyFlags[3] = GL_FALSE;
 }
 
-/* 690c7390 -- __glSpanPackUbyteRound: px_pack.c __glSpanPackUbyte with the correct rounding (+ half) */
+/* 690c7390 -- __glSpanPackUbyteRound: px_pack.c __glSpanPackUbyte (a component times 255, rounded) */
 void __fastcall __glSpanPackUbyteRound(__GLcontext *gc, __GLpixelSpanInfoICD *spanInfo,
 			     const GLvoid *inspan, GLvoid *outspan)
 {

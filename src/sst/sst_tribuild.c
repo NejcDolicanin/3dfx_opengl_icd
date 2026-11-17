@@ -306,7 +306,10 @@ GLubyte *__fastcall hwBuildTriangleProc(__GLcontext *gc)
         EMIT(og_je(gc, done));
     }
     if (flags & __GL_SHADE_TWOSIDED) {
-        /* two-sided: each vertex's colour pointer to the face's colour, the face's needs */
+        /* two-sided: each vertex's colour pointer to the face's colour, the face's needs.  Fix: the face comes
+        ** from the sign of the area left at [esp-4]; the original took the sign of edx, which still held the
+        ** first vertex pointer, so every triangle was lit as the same face */
+        EMIT(og_mov(gc, R(edx), MEMR(-4, esp)));
         EMIT(og_shr(gc, R(edx), IMM(0x1f)));
         EMIT(og_xor(gc, R(edx), IMM(1)));
         EMIT(og_mov(gc, R(dl), MEMR(&gc->polygon.face[0], edx)));

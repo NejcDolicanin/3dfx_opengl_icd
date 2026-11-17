@@ -251,7 +251,7 @@ void __fastcall __glClampRGBColor(__GLcontext *gc, __GLcolor *dst, const __GLcol
 
 /*
 ** 69090350 -- __glCalcRGBColorSI (s_light.c): the SI's plain-C RGB lighting of one vertex (fast path
-** first, no separate specular colour, no zero test on the attenuation denominator); ToDo UNUSED CODE:
+** first, no separate specular colour); ToDo UNUSED CODE:
 ** nothing in the driver calls it (the ICD uses __glCalcRGBColor, 690e2ce0)
 */
 void __fastcall __glCalcRGBColorSI(__GLcontext *gc, GLint face, __GLvertexICD *vx)
@@ -361,7 +361,8 @@ void __fastcall __glCalcRGBColorSI(__GLcontext *gc, GLint face, __GLvertexICD *v
                     att = lsm->attenuation;
                 } else {
                     dist = __GL_SQRTF(vPli.x*vPli.x + vPli.y*vPli.y + vPli.z*vPli.z);
-                    att = __GL_ONE_F / (k0 + (k1 + k2 * dist) * dist);
+                    dist = k0 + (k1 + k2 * dist) * dist;
+                    att = dist != zero ? __GL_ONE_F / dist : __GL_ONE_F;     /* fix: no zero test in the original */
                 }
             } else {
                 att = __GL_ONE_F;

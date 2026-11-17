@@ -891,7 +891,7 @@ zoomOut:					/* the original places this block after the else arm */
 		    ADD(__glSpanPackXRGB8888Uint);
 		    spanInfo->dstComponents = 4;
 		    break;
-		  case GL_BYTE:			ADD(__glSpanPackUbyte); break;
+		  case GL_BYTE:			ADD(__glSpanPackByte); break;
 		  case GL_UNSIGNED_BYTE:	ADD(__glSpanPackUbyteRound); break;
 		  case GL_SHORT:		ADD(__glSpanPackShort); break;
 		  case GL_UNSIGNED_SHORT:	ADD(__glSpanPackUshort); break;

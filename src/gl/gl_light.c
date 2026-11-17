@@ -510,8 +510,7 @@ void __fastcall ComputeMaterialState(__GLcontext *gc, __GLmaterialState *ms,
 /* 69091f40 -- ComputeLightMaterialState (s_light.c): for every enabled light source recompute the per-face
 ** products of light and material ambient / diffuse / specular colours that frontChange / backChange name, and,
 ** after a front ambient or emissive change, set light.baseColor = front sceneColor + the per-light front ambient
-** terms, clamped and scaled; on an emissive-only change the loop adds no ambient terms, so baseColor is the bare
-** sceneColor (ChangeMaterialEmission does add them) */
+** terms, clamped and scaled */
 void __fastcall ComputeLightMaterialState(__GLcontext *gc, GLint frontChange, GLint backChange)
 {
     __GLmaterialState *front, *back;
@@ -545,16 +544,20 @@ void __fastcall ComputeLightMaterialState(__GLcontext *gc, GLint frontChange, GL
 		lsm->front.ambient.r = front->ambient.r * r;
 		lsm->front.ambient.g = front->ambient.g * g;
 		lsm->front.ambient.b = front->ambient.b * b;
-
-		basecolor.r += lsm->front.ambient.r;
-		basecolor.g += lsm->front.ambient.g;
-		basecolor.b += lsm->front.ambient.b;
 	    }
 	    if (backChange & __GL_MATERIAL_AMBIENT) {
 		lsm->back.ambient.r = back->ambient.r * r;
 		lsm->back.ambient.g = back->ambient.g * g;
 		lsm->back.ambient.b = back->ambient.b * b;
 	    }
+	}
+
+	/* fix: the lights' ambient terms go into the base colour after an emission-only change too (the original
+	** added them only inside the ambient update above, so glMaterial(GL_EMISSION) lost them) */
+	if (frontChange & (__GL_MATERIAL_AMBIENT | __GL_MATERIAL_EMISSIVE)) {
+	    basecolor.r += lsm->front.ambient.r;
+	    basecolor.g += lsm->front.ambient.g;
+	    basecolor.b += lsm->front.ambient.b;
 	}
 
 	if (allChange & __GL_MATERIAL_DIFFUSE) {
@@ -667,6 +670,8 @@ void __fastcall ComputeLightState(__GLcontext *gc)
         lsm->constantAttenuation = lss->constantAttenuation;
         if (lsm->constantAttenuation) {
             lsm->attenuation = __GL_ONE_F / lss->constantAttenuation;
+        } else {
+            lsm->attenuation = __GL_ONE_F;      /* fix: was left stale; a zero denominator means no attenuation */
         }
         lsm->linearAttenuation = lss->linearAttenuation;
         lsm->quadraticAttenuation = lss->quadraticAttenuation;
@@ -1175,19 +1180,18 @@ __GLspecLUTEntry *__fastcall findEntry(__GLspecLUTCache *lutCache, __GLfloat exp
 ** vertex, an older revision of the SI routine with its inner loop in inline assembly.  The
 ** function is unoptimised in the original (the C between the __asm blocks is /Od code).
 ** Light source (lsm) words: +0x60 per-material machine (ambient +0, diffuse +0x10, specular +0x20),
-** +0x64/+0x68/+0x6c attenuation (constant, linear, quadratic), +0x74 position (x, y, z; +0x80 is position.w, tested
-** as a raw word: non-zero skips the attenuation, the opposite of SGI s_light.c and of __glCalcRGBColorSI, which
-** attenuate when w != 0; kept as the original),
+** +0x64/+0x68/+0x6c attenuation (constant, linear, quadratic), +0x74 position (x, y, z; +0x80 is position.w),
 ** +0x84 spot direction, +0x94 cos cutoff, +0x98 constant 1/attenuation, +0x9c isSpot,
 ** +0xe8 next, +0xec spot table, +0xf0 / +0xf4 its threshold and scale.
-** Kept as the original: the attenuation test ORs only the linear and quadratic words (the constant
-** one is loaded into EAX and dropped), and "esi = gc" in the final clamp is never used.
+** The attenuation is C (the original's assembly was wrong, see the loop); "esi = gc" in the final clamp is never
+** used.
 */
 #pragma optimize("", off)
 void __fastcall __glCalcRGBColor(__GLcontext *gc, GLint face, __GLvertexICD *vx)
 {
     /* /Od: VC6 gives the frame slots by the names' hash buckets, so the suffixed names and this (reversed) order
     ** reproduce the original's layout (the comments give the original offsets) */
+    __GLfloat attDist, attDen;      /* (added with the attenuation fix) */
     __GLfloat blueScale1;           /* -0xd0 */
     __GLfloat greenScale0;          /* -0xcc */
     __GLfloat redScale0;            /* -0xc8 */
@@ -1290,46 +1294,22 @@ void __fastcall __glCalcRGBColor(__GLcontext *gc, GLint face, __GLvertexICD *vx)
             }
         }
         __glI386NormalizeCoord(hHat1, hv);
+        /* Attenuation.  Fix: this was inline assembly that got it wrong three ways -- it attenuated directional
+        ** lights (w == 0) and not positional ones, added k0 to the numerator, 1 + k0 over (k1 + k2 d) d, and
+        ** divided by a zero denominator.  Now as the SI: positional lights only, 1 / (k0 + k1 d + k2 d^2), and no
+        ** attenuation when that denominator is zero */
+        attenuationv = one;
+        if (lsm->position.w != zero) {
+            if (lsm->linearAttenuation == zero && lsm->quadraticAttenuation == zero) {
+                attenuationv = lsm->attenuation;        /* 1 / k0 */
+            } else {
+                attDist = __GL_SQRTF(vPlit[0] * vPlit[0] + vPlit[1] * vPlit[1] + vPlit[2] * vPlit[2]);
+                attDen = lsm->constantAttenuation
+                         + (lsm->linearAttenuation + lsm->quadraticAttenuation * attDist) * attDist;
+                if (attDen != zero) attenuationv = one / attDen;
+            }
+        }
         __asm {
-            mov     edi, lsm
-            cmp     dword ptr [edi+0x80], 0
-            jne     noAttenuation
-            mov     eax, [edi+0x64]
-            mov     ebx, [edi+0x68]
-            mov     ecx, [edi+0x6c]
-            xor     edx, edx
-            or      edx, ebx
-            or      edx, ecx
-            jne     computeAttenuation
-            mov     edx, [edi+0x98]
-            mov     attenuationv, edx
-            jmp     attenuationDone
-        computeAttenuation:
-            fld     vPlit
-            fmul    vPlit
-            fld     vPlit[4]
-            fmul    vPlit[4]
-            fld     vPlit[8]
-            fmul    vPlit[8]
-            fxch    st(2)
-            faddp   st(1), st
-            faddp   st(1), st
-            fsqrt
-            fld     one
-            fld     dword ptr [edi+0x6c]
-            fmul    st, st(2)
-            fadd    dword ptr [edi+0x68]
-            fxch    st(2)
-            fmulp   st(2), st
-            fadd    dword ptr [edi+0x64]
-            fxch    st(1)
-            fdivp   st(1), st
-            fstp    attenuationv
-        attenuationDone:
-            jmp     haveAttenuation
-        noAttenuation:
-            mov     attenuationv, 0x3f800000
-        haveAttenuation:
             mov     eax, attenuationv
             mov     attenl, eax
             mov     edi, lsm

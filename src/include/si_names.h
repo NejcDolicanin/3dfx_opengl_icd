@@ -103,7 +103,7 @@ void __fastcall __glSpanReduceBGRNS(__GLcontext *gc, __GLpixelSpanInfoICD *spanI
 void __fastcall __glSpanReorderABGRNS(__GLcontext *gc, __GLpixelSpanInfoICD *spanInfo, const GLvoid *inspan, GLvoid *outspan);
 void __fastcall __glSpanReorderBGRANS(__GLcontext *gc, __GLpixelSpanInfoICD *spanInfo, const GLvoid *inspan, GLvoid *outspan);
 void __fastcall __glSpanReduceRedAlphaNS(__GLcontext *gc, __GLpixelSpanInfoICD *spanInfo, const GLvoid *inspan, GLvoid *outspan);
-void __fastcall __glSpanPackUbyte(__GLcontext *gc, __GLpixelSpanInfoICD *spanInfo, const GLvoid *inspan, GLvoid *outspan);
+void __fastcall __glSpanPackByte(__GLcontext *gc, __GLpixelSpanInfoICD *spanInfo, const GLvoid *inspan, GLvoid *outspan);
 void __fastcall __glSpanPack332Ubyte(__GLcontext *gc, __GLpixelSpanInfoICD *spanInfo, const GLvoid *inspan, GLvoid *outspan);
 void __fastcall __glSpanPack4444Ushort(__GLcontext *gc, __GLpixelSpanInfoICD *spanInfo, const GLvoid *inspan, GLvoid *outspan);
 void __fastcall __glSpanPackARGB4444Ushort(__GLcontext *gc, __GLpixelSpanInfoICD *spanInfo, const GLvoid *inspan, GLvoid *outspan);

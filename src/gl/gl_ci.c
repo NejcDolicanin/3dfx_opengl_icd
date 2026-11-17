@@ -236,10 +236,10 @@ void __fastcall ci_ClearRect(__GLcolorBufferICD *cfb, GLint x, GLint y, GLint x1
     GLint i, j;
     __GLfragmentICD frag;
 
-    /* Turn off logic op so store proc doesn't do it.  ORIGINAL BUG: SI clears __GL_INDEX_LOGIC_OP_ENABLE (1 << 2);
-    ** the ICD clears and restores bit 21, the RGBA one, so the colour-index clear still runs the index logic op */
-    logicOp = gc->state.enables.general & __GL_COLOR_LOGIC_OP_ENABLE;
-    gc->state.enables.general &= ~__GL_COLOR_LOGIC_OP_ENABLE;
+    /* Turn off logic op so store proc doesn't do it.  Fix: the index enable, as the SI; the original switched the
+    ** RGBA one (bit 21) off, so a colour-index clear still ran the index logic op */
+    logicOp = gc->state.enables.general & __GL_INDEX_LOGIC_OP_ENABLE;
+    gc->state.enables.general &= ~__GL_INDEX_LOGIC_OP_ENABLE;
 
     frag.color.r = gc->state.raster.clearIndex;
 

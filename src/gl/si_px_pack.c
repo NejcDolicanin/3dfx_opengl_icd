@@ -404,8 +404,10 @@ void __fastcall __glSpanReduceRedAlphaNS(__GLcontext *gc, __GLpixelSpanInfoICD *
     }
 }
 
-/* 690c73e0 -- __glSpanPackUbyte */
-void __fastcall __glSpanPackUbyte(__GLcontext *gc, __GLpixelSpanInfoICD *spanInfo, 
+/* 690c73e0 -- __glSpanPackByte: the GL_BYTE packer (its only use, gl_pxpick.c): a component c becomes
+** floor(127.5 c), the signed byte of the GL conversion (255 c - 1) / 2.  It was named __glSpanPackUbyte here and
+** read as a broken unsigned-byte packer; GL_UNSIGNED_BYTE goes through __glSpanPackUbyteRound */
+void __fastcall __glSpanPackByte(__GLcontext *gc, __GLpixelSpanInfoICD *spanInfo, 
                        const GLvoid *inspan, GLvoid *outspan)
 {
     GLint i;
@@ -416,7 +418,6 @@ void __fastcall __glSpanPackUbyte(__GLcontext *gc, __GLpixelSpanInfoICD *spanInf
     GLint totalSize = width * components;
 
     for (i=0; i<totalSize; i++) {
-        /* ICD: the older SI macro, `* __glHalf` where `+` was meant (original bug kept: halves the value) */
         *outData++ = (GLubyte) __GL_FLOORF((*inData++ * gc->constants.val255) * __glHalf);
     }
 }

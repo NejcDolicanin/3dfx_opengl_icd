@@ -70,8 +70,8 @@ GLubyte *__fastcall og_genColor4f(__GLcontext *gc, GLubyte *pc, GLuint **pool)
         EMIT(og_mov(gc, MEM(&gc->state.current.packedColor), R(eax)));
         tail = og_femms(gc);
     } else if (gc->constants.cpuCaps & __GL_CPU_SSE) {
-        /* SSE: xmm1 = r, g, b, a.  Original bug: b and a are loaded only after their userColor stores,
-           so userColor.b, .a get r, g (the last two loads are dead) */
+        /* SSE: xmm1 = r, g, b, a.  Fix: the original loaded b and a only after their userColor stores, so
+           userColor.b, .a got r, g and glGet(GL_CURRENT_COLOR) returned (r, g, r, g) */
         EMIT(og_movups(gc, R(mm1), MEMR(ARG(0), esp)));
         EMIT(og_mov(gc, R(eax), MEMR(ARG(0), esp)));
         EMIT(og_mov(gc, R(edx), MEMR(ARG(1), esp)));
@@ -79,11 +79,11 @@ GLubyte *__fastcall og_genColor4f(__GLcontext *gc, GLubyte *pc, GLuint **pool)
         EMIT(og_mov(gc, MEM(&gc->state.current.userColor.r), R(eax)));
         EMIT(og_mov(gc, MEM(&gc->state.current.userColor.g), R(edx)));
         EMIT(og_maxps(gc, R(mm1), R(mm2)));
+        EMIT(og_mov(gc, R(eax), MEMR(ARG(2), esp)));
+        EMIT(og_mov(gc, R(edx), MEMR(ARG(3), esp)));
         EMIT(og_mov(gc, MEM(&gc->state.current.userColor.b), R(eax)));
         EMIT(og_mov(gc, MEM(&gc->state.current.userColor.a), R(edx)));
         EMIT(og_movaps(gc, R(mm4), MEM(k + 4)));
-        EMIT(og_mov(gc, R(eax), MEMR(ARG(2), esp)));
-        EMIT(og_mov(gc, R(edx), MEMR(ARG(3), esp)));
         EMIT(og_mulps(gc, R(mm1), R(mm4)));
         EMIT(og_minps(gc, R(mm1), R(mm4)));
         EMIT(og_movups(gc, MEM(&gc->state.current.color), R(mm1)));

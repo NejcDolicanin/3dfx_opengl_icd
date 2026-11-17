@@ -399,7 +399,7 @@ void __fastcall FastMemClear1(__GLcontext *gc, GLubyte *cptr, GLint w, GLint h, 
 ** the next; gl_light.c, or any other predecessor tried, reorders its x87 code). */
 /*
 ** 69090fe0 -- __glCalcCIColor (s_light.c; gc->procs.calcColor in colour-index mode).  The SI routine
-** with the light loop's fast path first, no zero test on the attenuation denominator, and an ICD
+** with the light loop's fast path first, and an ICD
 ** epilogue: when the material's index shift (ms +0x54) or the colour index offset (*msm->indexOffsetPtr)
 ** is set, the lit index is shifted by it in 8.8 fixed point and the offset added.
 */
@@ -491,7 +491,8 @@ void __fastcall __glCalcCIColor(__GLcontext *gc, GLint face, __GLvertexICD *vx)
                     att = lsm->attenuation;
                 } else {
                     dist = (__GLfloat)sqrt(vPli.x*vPli.x + vPli.y*vPli.y + vPli.z*vPli.z);
-                    att = __GL_ONE_F / (k0 + (k1 + k2 * dist) * dist);
+                    dist = k0 + (k1 + k2 * dist) * dist;
+                    att = dist != zero ? __GL_ONE_F / dist : __GL_ONE_F;     /* fix: no zero test in the original */
                 }
             } else {
                 att = __GL_ONE_F;
