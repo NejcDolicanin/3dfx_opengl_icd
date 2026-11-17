@@ -106,15 +106,18 @@ GLint g_pfdCount16 = 4;                 /* 690eed88 */
 GLint g_pfdCount32 = 4;                 /* 690eee40 */
 /* 69014db8 -- wglGlideDescribePixelFormat: the 16 bpp table, or the 32 bpp one on a 32 bpp desktop when the PIXEXT
 ** extension is present; Voodoo4 drops the 4x FSAA row, Banshee / Voodoo3 both FSAA rows.  FX_GL_FORCE_16BPP_PIX
-** overrides the desktop: '1' only the 16 bpp formats, '2' the 32 bpp formats first and then the 16 bpp ones (a game
-** that sets a 16 bpp mode itself still finds a format).  No formats (0) on a
+** overrides the desktop: '1' the 16 bpp formats, and after them (when the card has 32 bpp ones) the same formats
+** described as 32 bpp: a game that only takes a 32 bpp format still picks the ICD and gets 16 bpp rendering, as
+** MesaFX's force does (wglGlideRealPixelFormat gives the format behind such a row); '2' the 32 bpp formats first
+** and then the 16 bpp ones (a game that sets a 16 bpp mode itself still finds a format).  No formats (0) on a
 ** Banshee / Voodoo3 with under 16 MB and a desktop above 1024x768, or with the SURFACE extension on a desktop under
 ** 16 bpp.  A valid index copies the whole 44-byte row into out (see the CB above) and returns the count; an
 ** invalid one returns 0, or the count when out is NULL */
-GLint __fastcall wglGlideDescribePixelFormat(HDC hdc, PIXELFORMATDESCRIPTOR *out, int index)
+static GLint wglGlidePixelFormatRow(HDC hdc, PIXELFORMATDESCRIPTOR *out, int index, GLboolean real)
 {
     const __WGLpfdRow *table = g_pfdTable16;
-    const __WGLpfdRow *table2 = NULL;           /* force 32: the 16 bpp formats after the 32 bpp ones */
+    const __WGLpfdRow *table2 = NULL;           /* force 32: the 16 bpp formats after the 32 bpp ones;
+                                                   force 16: the 16 bpp formats again, described as 32 bpp */
     GLint count = g_pfdCount16, total;
     int bpp;
     const char *hw, *force;
@@ -138,6 +141,8 @@ GLint __fastcall wglGlideDescribePixelFormat(HDC hdc, PIXELFORMATDESCRIPTOR *out
     if (bpp == 32 && hwHasPixextExt()) {
         table = g_pfdTable32; count = g_pfdCount32;
         if (force != NULL && *force == '2') table2 = g_pfdTable16;   /* both tables have the same row count */
+    } else if (force != NULL && *force == '1' && hwHasPixextExt()) {
+        table2 = real ? g_pfdTable16 : g_pfdTable32;                 /* the 32 bpp description of the 16 bpp rows */
     }
     if (strstr(hw, "Voodoo4") != NULL) count -= 1;             /* no 4x FSAA on one chip */
     if (strstr(hw, "Voodoo Banshee") != NULL || strstr(hw, "Voodoo3") != NULL) count -= 2;   /* no FSAA */
@@ -151,6 +156,16 @@ GLint __fastcall wglGlideDescribePixelFormat(HDC hdc, PIXELFORMATDESCRIPTOR *out
         return total;
     }
     return (out != NULL) ? 0 : total;
+}
+GLint __fastcall wglGlideDescribePixelFormat(HDC hdc, PIXELFORMATDESCRIPTOR *out, int index)
+{
+    return wglGlidePixelFormatRow(hdc, out, index, GL_FALSE);
+}
+/* wglGlideRealPixelFormat: as wglGlideDescribePixelFormat, but with the format a context of this index really
+** gets (the 16 bpp row behind a 32 bpp description under FX_GL_FORCE_16BPP_PIX=1) */
+GLint __fastcall wglGlideRealPixelFormat(HDC hdc, PIXELFORMATDESCRIPTOR *out, int index)
+{
+    return wglGlidePixelFormatRow(hdc, out, index, GL_TRUE);
 }
 
 /*

@@ -357,6 +357,7 @@ void      wglDisplayNotifyOpen(void); void wglDisplayNotifyClose(void);         
 BOOL      __fastcall wglGlideProcessAttach(DWORD threadId); BOOL __fastcall wglGlideProcessDetach(DWORD threadId); BOOL __fastcall wglGlideThreadAttach(DWORD threadId);
 LONG      __fastcall wglGlideDescribePixelFormatCB(HDC hdc, void *out, int index);     /* 69014d40 */
 GLint     __fastcall wglGlideDescribePixelFormat(HDC hdc, PIXELFORMATDESCRIPTOR *out, int index); /* 69014db8 */
+GLint     __fastcall wglGlideRealPixelFormat(HDC hdc, PIXELFORMATDESCRIPTOR *out, int index);
 GLint     __fastcall wglGlideChooseResolution(__GLcontext *gc);                       /* 69014f2f */
 GLint     __fastcall wglGlideWinOpen(__GLcontext *gc, GLint resolution);              /* 690150e3 */
 void      __fastcall wglGlideWinClose(__GLcontext *gc);                               /* 690151e0 */

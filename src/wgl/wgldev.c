@@ -700,7 +700,7 @@ GLboolean __fastcall wglDevMakeCurrent(__GLcontext *gc)
     ICD_T("wglDevMakeCurrent fullScreen", rc->window->dp.fullScreen);
     if (wglDisplayQuery() != 0) { ICD_T("wglDevMakeCurrent fail at line", __LINE__); goto fail; }                      /* 69014c10: ExtEscape 0x3df7 */
     if (rc->window->dp.fullScreen) {
-        if (wglGlideDescribePixelFormat(rc->hdc, &fmt.pfd, rc->iPixelFormat - 1) != 0)   /* 69014db8 */
+        if (wglGlideRealPixelFormat(rc->hdc, &fmt.pfd, rc->iPixelFormat - 1) != 0)   /* 69014db8 */
             gc->fx.numSamples = fmt.samples;
         if ((GLint)(gc->hwcx.glideContext = wglGlideOpen(gc)) != -1) {          /* 69015619 */
             gc->fx.fullscreen = 1;

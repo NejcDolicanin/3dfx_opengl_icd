@@ -106,6 +106,12 @@ HGLRC WINAPI DrvCreateLayerContext(HDC hdc, INT iLayerPlane)
         wglSystemError("wglCreateLayerContext", ERROR_INVALID_PIXEL_FORMAT);
         return NULL;
     }
+    if (g_device->describePixelFormat == wglGlideDescribePixelFormatCB) {
+        /* the format the context really gets (FX_GL_FORCE_16BPP_PIX=1 describes 16 bpp formats as 32 bpp too) */
+        DWORD row[11];
+        if (wglGlideRealPixelFormat(hdc, (PIXELFORMATDESCRIPTOR *)row, iPixelFormat - 1) != 0)
+            memcpy(&rc->pfd, row, sizeof(rc->pfd));
+    }
     rc->pfd.iLayerType = 0;                                 /* +0x4a */
     if (iLayerPlane != 0) {
         LAYERPLANEDESCRIPTOR lpd;               /* (block scope: lets VC6 schedule the byte copies) */
