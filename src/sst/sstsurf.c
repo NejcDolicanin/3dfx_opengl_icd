@@ -335,6 +335,7 @@ GLboolean __fastcall winPresent(__GLcontext *gc)
         if (g_winPrimary != NULL && sb->surf != NULL) {
             if (IDirectDrawSurface2_SetClipper(g_winPrimary, g_winClipper) < 0) {
                 w22DbgMsg("IDirectDrawSurface2_SetClipper( primary, clipper ) Failed");
+                LeaveCriticalSection(&g_winPrimaryLock);        /* fix: the original returned inside the lock */
                 return GL_FALSE;
             }
             ddsd.dwSize = sizeof(ddsd);
@@ -398,6 +399,7 @@ GLboolean __fastcall winReadBack(__GLcontext *gc)
         if (g_winPrimary != NULL && sb->surf != NULL) {
             if (IDirectDrawSurface2_SetClipper(g_winPrimary, g_winClipper) < 0) {
                 w22DbgMsg("IDirectDrawSurface2_SetClipper(primary, clipper) Failed");
+                LeaveCriticalSection(&g_winPrimaryLock);        /* fix: the original returned inside the lock */
                 return GL_FALSE;
             }
             if (IDirectDrawSurface_Blt(sb->surf, &sb->rect, (LPDIRECTDRAWSURFACE)g_winPrimary, &dst, DDBLT_WAIT, NULL) != DD_OK
@@ -810,10 +812,10 @@ int __fastcall winOpenDDraw(HWND hwnd)
         SFC_PROC(grSurfaceSetAuxSurfaceExt) = grGetProcAddress("grSurfaceSetAuxSurfaceExt");
         SFC_PROC(grSurfaceSetTextureSurfaceExt) = grGetProcAddress("grSurfaceSetTextureSurfaceExt");
         SFC_PROC(grSurfaceCalcTextureWHDExt) = grGetProcAddress("grSurfaceCalcTextureWHDExt");
-        if (!SFC_PROC(grSurfaceCreateContextExt) && !SFC_PROC(grSurfaceReleaseContextExt)
-            && !SFC_PROC(grSurfaceSetRenderingSurfaceExt1) && !SFC_PROC(grSurfaceSetAuxSurfaceExt)
-            && !SFC_PROC(grSurfaceSetTextureSurfaceExt) && !SFC_PROC(grSurfaceCalcTextureWHDExt))
-            return 0;   /* only when none of them exists (original bug: the others are called unchecked) */
+        if (!SFC_PROC(grSurfaceCreateContextExt) || !SFC_PROC(grSurfaceReleaseContextExt)
+            || !SFC_PROC(grSurfaceSetRenderingSurfaceExt1) || !SFC_PROC(grSurfaceSetAuxSurfaceExt)
+            || !SFC_PROC(grSurfaceSetTextureSurfaceExt) || !SFC_PROC(grSurfaceCalcTextureWHDExt))
+            return 0;   /* fix: any of them missing (the original gave up only when all six were, and called the rest) */
         if (DirectDrawCreate(NULL, &pddx, NULL) < 0) {
             w22DbgMsg("DirectDrawCreate( 0, &pddx, NULL ) Failed");
             return 0;

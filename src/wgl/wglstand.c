@@ -14,7 +14,7 @@ DWORD g_nextStandAloneRc = 1;        /* 690ee9c4 */
 
 /* 6900d840 -- DescribePixelFormat: the device's describePixelFormat for format iPixelFormat (1-based); copies up to
 ** nBytes (at most 40) of the descriptor to ppfd and returns the number of formats, 0 for an invalid one.  With
-** ppfd NULL it just counts (but still copies, to NULL, when iPixelFormat > 0 and nBytes != 0) */
+** ppfd NULL it just counts */
 int WINAPI wglSADescribePixelFormat(HDC hdc, int iPixelFormat, UINT nBytes, LPPIXELFORMATDESCRIPTOR ppfd)
 {
     PIXELFORMATDESCRIPTOR pfd;
@@ -23,7 +23,7 @@ int WINAPI wglSADescribePixelFormat(HDC hdc, int iPixelFormat, UINT nBytes, LPPI
     else              n = g_device->describePixelFormat(hdc, NULL, -1);
     if (n != 0 && iPixelFormat > 0) {
         if (nBytes > sizeof(pfd)) nBytes = sizeof(pfd);
-        if (nBytes != 0) memcpy(ppfd, &pfd, nBytes);
+        if (nBytes != 0 && ppfd != NULL) memcpy(ppfd, &pfd, nBytes);   /* fix: the original copied to a NULL ppfd */
     }
     return n;
 }
@@ -184,7 +184,7 @@ HGLRC WINAPI wglSACreateContext(HDC hdc)
     __WGLrc *rc;
 
     iPixelFormat = wglSAGetPixelFormat(hdc);
-    if (iPixelFormat == 0) { wglSystemError("wglCreateContex", ERROR_INVALID_PIXEL_FORMAT); return NULL; }
+    if (iPixelFormat == 0) { wglSystemError("wglCreateContext", ERROR_INVALID_PIXEL_FORMAT); return NULL; }
     rc = (__WGLrc *)wglMalloc(sizeof(__WGLrc));
     if (rc == NULL) { wglSystemError("wglCreateContext", ERROR_NOT_ENOUGH_MEMORY); return NULL; }
     memset(rc, 0, sizeof(*rc));
@@ -217,6 +217,7 @@ HGLRC WINAPI wglSACreateContext(HDC hdc)
     case OBJ_MEMDC: rc->hdc = CreateCompatibleDC(hdc); break;
     case OBJ_DC:    rc->hdc = GetDC(WindowFromDC(hdc)); break;
     default:
+        wglRcDestroyGC(rc);                    /* fix: the original freed the rc and leaked its gc and modes */
         wglFree(rc);
         wglSystemError("wglCreateContext", 0xC0000000);
         wglUnlock();
@@ -252,6 +253,13 @@ BOOL WINAPI wglSADeleteContext(HGLRC hrc)
         __glInstallNullDispatch();
     }
     if (!wglRcDestroyGC(rc)) { wglSystemError("wglDeleteContext", 0xC0000000); goto fail; }
+    if (!rc->everCurrent && rc->hdc != NULL) {
+        /* fix: the DC wglCreateContext made was never released (a make-current replaces it by the caller's) */
+        switch (GetObjectType(rc->hdc)) {
+        case OBJ_MEMDC: DeleteDC(rc->hdc); break;
+        case OBJ_DC:    ReleaseDC(WindowFromDC(rc->hdc), rc->hdc); break;
+        }
+    }
     wglLock();
     wglRcListRemove(rc);
     wglUnlock();
@@ -315,15 +323,15 @@ BOOL WINAPI wglSAMakeCurrent(HDC hdc, HGLRC hrc)
         __WGLrc *currc = GC_imports_wscx(cur);
         __WGLwindow *curw = currc->window;
         LPCRITICAL_SECTION cs;
-        rc->flags &= ~1u;                         /* sic: the new rc, not currc (hrc == 0: the sentinel s_rcHead) */
+        currc->flags &= ~1u;                      /* fix: the rc being released (the original used the new rc) */
         if (!((GLboolean (__fastcall *)(__GLcontext *))GC_exports_loseCurrent(cur))(cur)) { wglUnlock(); return (ICD_T("wglSAMakeCurrent FALSE at line", __LINE__), FALSE); }
         cs = curw->dp.lock;
         if (wglDestroyWindow(curw)) wglDeleteCritSect(cs);
         currc->threadId = (DWORD)-1;
         currc->window = NULL;
         currc->isCurrent = FALSE;
-        rc->hwnd = NULL;
-        rc->hdc = NULL;
+        currc->hwnd = NULL;                       /* fix: as above; a stale hwnd let wglSwapBuffers find this rc */
+        currc->hdc = NULL;
         wglSetCurrentGC(g_nullGC);
     }
     if (hrc != NULL) {
@@ -340,12 +348,20 @@ BOOL WINAPI wglSAMakeCurrent(HDC hdc, HGLRC hrc)
             rc->hwnd = NULL;
             rc->window = NULL;
             rc->hdc = NULL;
-            wglSetCurrentGC(NULL);
+            wglSetCurrentGC(g_nullGC);                /* fix: the null context, not a NULL gc */
+            __glInstallNullDispatch();
             wglUnlock();
             return (ICD_T("wglSAMakeCurrent FALSE at line", __LINE__), FALSE);
         }
         ICD_T("wglSAMakeCurrent: device makeCurrent TRUE", 1);
         wglSetCurrentGC(gc);
+        if (!rc->everCurrent && rc->hdc != NULL && rc->hdc != hdc) {
+            /* fix: release the DC wglCreateContext made before the caller's replaces it */
+            switch (GetObjectType(rc->hdc)) {
+            case OBJ_MEMDC: DeleteDC(rc->hdc); break;
+            case OBJ_DC:    ReleaseDC(WindowFromDC(rc->hdc), rc->hdc); break;
+            }
+        }
         rc->isCurrent = TRUE;
         rc->threadId = GetCurrentThreadId();
         rc->hwnd = hwnd;
@@ -373,7 +389,8 @@ BOOL WINAPI wglSAShareLists(HGLRC a, HGLRC b)
     wglLock();
     if (!((GCfn_bool_gc_gc)GC_exports_shareContext(rb->gc))(rb->gc, ra->gc)) {   /* rb's shareContext(rb->gc, ra->gc) */
         wglSystemError("wglShareLists", ERROR_INVALID_PARAMETER);
-        return FALSE;                             /* sic: returns with the lock held */
+        wglUnlock();                              /* fix: the original returned with the lock held */
+        return FALSE;
     }
     wglUnlock();
     return TRUE;

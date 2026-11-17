@@ -159,15 +159,16 @@ GLuint __fastcall __glScreenPixelLayout(HDC hdc, DWORD *redMask, DWORD *greenMas
 
 /* 690ea0d0 -- __glDescribePixelFormat: the glcore's describe-pixel-format callback (unreferenced; the device
 ** table uses wglGlideDescribePixelFormatCB): copy format i (0-based) of the usable list into *out; returns
-** the format count, 0 for a bad index (the count when out is NULL).  Original bug (dead code): out of memory
-** returns 0 with wglLock still held. */
+** the format count, 0 for a bad index (the count when out is NULL). */
 GLint __fastcall __glDescribePixelFormat(HDC hdc, PIXELFORMATDESCRIPTOR *out, int i)
 {
     wglLock();
     if (g_pfdListStale) {
 	g_pfdList = (PIXELFORMATDESCRIPTOR **) wglMalloc(32 * sizeof(PIXELFORMATDESCRIPTOR *));
-	if (g_pfdList == NULL)
+	if (g_pfdList == NULL) {
+	    wglUnlock();        /* fix: the original returned with the lock held */
 	    return 0;
+	}
 	__glBuildPixelFormatList(hdc, g_pfdTemplates, 32, g_pfdList, &g_pfdCount);
 	g_pfdListStale = 0;
     }

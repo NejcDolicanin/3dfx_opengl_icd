@@ -159,6 +159,7 @@ void __fastcall wglDDrawFree(LPDIRECTDRAW dd)
     if (--g_ddRefs == 0) {
         IDirectDraw_Release(dd);
         FreeLibrary(g_hDDraw);
+        if (dd == g_ddraw) g_ddraw = NULL;      /* fix: the released object stayed in g_ddraw */
     }
 }
 
@@ -189,7 +190,7 @@ GLboolean wglDDrawOpen(void)
     }
 }
 
-/* 6900f950 -- __wglDDrawClose: wglDDrawFree(g_ddraw), the pointer left as it is; GL_TRUE */
+/* 6900f950 -- __wglDDrawClose: wglDDrawFree(g_ddraw); GL_TRUE */
 GLboolean wglDDrawClose(void)
 {
     wglDDrawFree(g_ddraw);

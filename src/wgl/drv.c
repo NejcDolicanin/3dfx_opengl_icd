@@ -59,6 +59,7 @@ BOOL WINAPI DrvSetPixelFormat(HDC hdc, INT iPixelFormat)
         if (DescribePixelFormat(hdc, iPixelFormat, sizeof(modePfd), &modePfd) == 0) return FALSE;
         wglModesFromPFD(&modes, &modePfd);
         w = wglCreateWindow(hdc, hwnd, &modes);
+        if (w == NULL) return FALSE;
     }
     if (w->iPixelFormat != 0) return FALSE;    /* may only be set once */
     if (DescribePixelFormat(hdc, iPixelFormat, sizeof(pfd), &pfd) == 0) return FALSE;
@@ -78,11 +79,10 @@ HGLRC WINAPI DrvCreateContext(HDC hdc)
     return DrvCreateLayerContext(hdc, 0);
 }
 
-/* 6900c0f5 -- DrvCreateLayerContext: allocate a zeroed __WGLrc holding the DC's pixel format descriptor (for a
-** nonzero iLayerPlane overwritten from DrvDescribeLayerPlane's descriptor, which that stub never fills), create its
-** gc through wglRcCreateGC (always layer 0), keep its own DC (CreateCompatibleDC for a memory DC, GetDC of the
-** window otherwise), add it to the rc list and return its handle (g_nextRcHandle++); NULL with a system error on
-** failure (no pixel format, no memory, gc creation, other DC types; that last path frees the rc but not its gc) */
+/* 6900c0f5 -- DrvCreateLayerContext: allocate a zeroed __WGLrc holding the DC's pixel format descriptor, create its
+** gc through wglRcCreateGC, keep its own DC (CreateCompatibleDC for a memory DC, GetDC of the window otherwise),
+** add it to the rc list and return its handle (g_nextRcHandle++); NULL with a system error on failure (no pixel
+** format, a layer plane other than the main one, no memory, gc creation, other DC types) */
 HGLRC WINAPI DrvCreateLayerContext(HDC hdc, INT iLayerPlane)
 {
     ICD_TD("DrvCreateLayerContext")
@@ -91,7 +91,9 @@ HGLRC WINAPI DrvCreateLayerContext(HDC hdc, INT iLayerPlane)
 
     iPixelFormat = GetPixelFormat(hdc);
     wglGetCurrentGC();
-    if (iPixelFormat == 0) {
+    /* fix: there are no layer planes.  The original copied DrvDescribeLayerPlane's descriptor, which that stub
+    ** never filled, into the rc and still made a main-plane gc */
+    if (iPixelFormat == 0 || iLayerPlane != 0) {
         wglSystemError("wglCreateLayerContext", ERROR_INVALID_PIXEL_FORMAT);
         return NULL;
     }
@@ -113,37 +115,6 @@ HGLRC WINAPI DrvCreateLayerContext(HDC hdc, INT iLayerPlane)
             memcpy(&rc->pfd, row, sizeof(rc->pfd));
     }
     rc->pfd.iLayerType = 0;                                 /* +0x4a */
-    if (iLayerPlane != 0) {
-        LAYERPLANEDESCRIPTOR lpd;               /* (block scope: lets VC6 schedule the byte copies) */
-        if (!DrvDescribeLayerPlane(hdc, iPixelFormat, iLayerPlane, sizeof(lpd), &lpd)) {
-            wglFree(rc);
-            wglSystemError("wglCreateLayerContext", ERROR_INVALID_PIXEL_FORMAT);
-            return NULL;
-        }
-        rc->pfd.iPixelType   = lpd.iPixelType;
-        rc->pfd.cColorBits   = lpd.cColorBits;
-        rc->pfd.cRedBits     = lpd.cRedBits;
-        rc->pfd.cRedShift    = lpd.cRedShift;
-        rc->pfd.cGreenBits   = lpd.cGreenBits;
-        rc->pfd.cGreenShift  = lpd.cGreenShift;
-        rc->pfd.cBlueBits    = lpd.cBlueBits;
-        rc->pfd.cBlueShift   = lpd.cBlueShift;
-        rc->pfd.cAlphaBits   = lpd.cAlphaBits;
-        rc->pfd.cAlphaShift  = lpd.cAlphaShift;
-        rc->pfd.cAccumBits   = lpd.cAccumBits;
-        rc->pfd.cAccumRedBits   = lpd.cAccumRedBits;
-        rc->pfd.cAccumGreenBits = lpd.cAccumGreenBits;
-        rc->pfd.cAccumBlueBits  = lpd.cAccumBlueBits;
-        rc->pfd.cAccumAlphaBits = lpd.cAccumAlphaBits;
-        rc->pfd.cDepthBits   = lpd.cDepthBits;
-        rc->pfd.nSize    = sizeof(PIXELFORMATDESCRIPTOR);
-        rc->pfd.nVersion = 1;
-        rc->pfd.dwFlags  = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_NEED_PALETTE;   /* 0xa4 */
-        rc->pfd.cStencilBits = lpd.cStencilBits;
-        rc->pfd.cAuxBuffers  = lpd.cAuxBuffers;
-        rc->pfd.iLayerType  = (BYTE)iLayerPlane;
-        rc->pfd.dwVisibleMask = lpd.crTransparent;          /* +0x50 <- lpd+0x1c */
-    }
     wglLock();
     rc->isCurrent    = FALSE;
     rc->threadId     = (DWORD)-1;
@@ -162,6 +133,7 @@ HGLRC WINAPI DrvCreateLayerContext(HDC hdc, INT iLayerPlane)
     case OBJ_MEMDC: rc->hdc = CreateCompatibleDC(hdc); break;
     case OBJ_DC:    rc->hdc = GetDC(WindowFromDC(hdc)); break;
     default:
+        wglRcDestroyGC(rc);                    /* fix: the original freed the rc and leaked its gc and modes */
         wglFree(rc);
         wglSystemError("wglCreateLayerContext", 0xC0000000);
         wglUnlock();
@@ -239,9 +211,9 @@ PGLCLTPROCTABLE WINAPI DrvSetContext(HDC hdc, DHGLRC dhrc, PFN_SETPROCTABLE call
 
         wglLock();
         /* 3dfx: clamp an oversized client area to the device / desktop size */
-        GetClientRect(hwnd, &client);
-        if (client.right - client.left > GetDeviceCaps(hdc, HORZRES) ||
-            client.bottom - client.top > GetDeviceCaps(hdc, VERTRES)) {
+        if (hwnd != NULL && GetClientRect(hwnd, &client) &&     /* fix: a memory DC has no window (was unchecked) */
+            (client.right - client.left > GetDeviceCaps(hdc, HORZRES) ||
+             client.bottom - client.top > GetDeviceCaps(hdc, VERTRES))) {
             GetWindowRect(GetDesktopWindow(), &desktop);
             cy = (client.bottom - client.top < desktop.bottom) ? client.bottom - client.top : desktop.bottom;
             cx = (client.right - client.left < desktop.right) ? client.right - client.left : desktop.right;
@@ -312,7 +284,7 @@ BOOL WINAPI DrvReleaseContext(DHGLRC dhrc)
         __WGLrc *currc = GC_imports_wscx(cur);      /* gc->imports.wscx-like back pointer */
         __WGLwindow *curw = currc->window;
         LPCRITICAL_SECTION cs;
-        rc->flags |= 0x10;
+        if (rc != NULL) rc->flags |= 0x10;      /* fix: a bad dhrc gave a NULL rc here */
         if (!GC_exports_loseCurrent(cur)(cur)) {  /* exports.loseCurrent */
             wglUnlock();
             return FALSE;
@@ -322,7 +294,7 @@ BOOL WINAPI DrvReleaseContext(DHGLRC dhrc)
         currc->threadId  = (DWORD)-1;
         currc->window    = NULL;
         currc->isCurrent = FALSE;
-        rc->hwnd = NULL;
+        if (rc != NULL) rc->hwnd = NULL;
         wglSetCurrentGC(g_nullGC);
     }
     wglUnlock();
@@ -409,14 +381,14 @@ BOOL WINAPI DrvSwapLayerBuffers(HDC hdc, UINT planes)
     return TRUE;
 }
 
-/* 6900c026 -- DrvDescribeLayerPlane: stub: TRUE for any nonzero pixel format and layer plane without filling plpd;
-** otherwise ERROR_INVALID_PIXEL_FORMAT and FALSE */
+/* 6900c026 -- DrvDescribeLayerPlane: there are no layer planes: ERROR_INVALID_PIXEL_FORMAT and FALSE */
 BOOL WINAPI DrvDescribeLayerPlane(HDC hdc, INT iPixelFormat, INT iLayerPlane, UINT nBytes, LPLAYERPLANEDESCRIPTOR plpd)
 {
     ICD_TD("DrvDescribeLayerPlane")
     (void)hdc; (void)nBytes; (void)plpd;
+    (void)iPixelFormat; (void)iLayerPlane;
     wglGetCurrentGC();
-    if (iPixelFormat != 0 && iLayerPlane != 0) return TRUE;   /* stub: never fills plpd */
+    /* fix: no layer planes (the original returned TRUE for a nonzero plane without filling plpd) */
     wglSystemError("wglDescribeLayerPlane", ERROR_INVALID_PIXEL_FORMAT);
     return FALSE;
 }
@@ -435,7 +407,7 @@ BOOL WINAPI DrvRealizeLayerPalette(HDC hdc, INT iLayerPlane, BOOL bRealize)
     return TRUE;
 }
 
-/* 6900b7a6 -- DrvGetLayerPaletteEntries: stub: 0 for the main plane (error text "wglDescribeLayerPlane") or a
+/* 6900b7a6 -- DrvGetLayerPaletteEntries: stub: 0 for the main plane or a
 ** non-window DC, else 1 without writing pcr */
 int WINAPI DrvGetLayerPaletteEntries(HDC hdc, INT iLayerPlane, INT iStart, INT cEntries, COLORREF *pcr)
 {
@@ -443,21 +415,21 @@ int WINAPI DrvGetLayerPaletteEntries(HDC hdc, INT iLayerPlane, INT iStart, INT c
     DWORD type = GetObjectType(hdc);
     (void)iStart; (void)cEntries; (void)pcr;
     wglGetCurrentGC();
-    if (iLayerPlane == 0) { wglSystemError("wglDescribeLayerPlane", ERROR_INVALID_PIXEL_FORMAT); return 0; }
+    if (iLayerPlane == 0) { wglSystemError("wglGetLayerPaletteEntries", ERROR_INVALID_PIXEL_FORMAT); return 0; }
     if (type != OBJ_DC) return 0;
     WindowFromDC(hdc);
     return 1;
 }
 
 /* 6900b816 -- DrvSetLayerPaletteEntries: stub: always 0 (sets nothing); ERROR_INVALID_PIXEL_FORMAT for the main
-** plane (error text "wglDescribeLayerPlane") */
+** plane */
 int WINAPI DrvSetLayerPaletteEntries(HDC hdc, INT iLayerPlane, INT iStart, INT cEntries, CONST COLORREF *pcr)
 {
     ICD_TD("DrvSetLayerPaletteEntries")
     DWORD type = GetObjectType(hdc);
     (void)iStart; (void)cEntries; (void)pcr;
     wglGetCurrentGC();
-    if (iLayerPlane == 0) { wglSystemError("wglDescribeLayerPlane", ERROR_INVALID_PIXEL_FORMAT); return 0; }
+    if (iLayerPlane == 0) { wglSystemError("wglSetLayerPaletteEntries", ERROR_INVALID_PIXEL_FORMAT); return 0; }
     if (type == OBJ_DC) WindowFromDC(hdc);
     return 0;
 }

@@ -578,6 +578,9 @@ __GLcontext *__fastcall wglDevCreateContext(void *imports, const __WGLmodes *mod
 */
 GLboolean __fastcall wglDevDestroyContext(__GLcontext *gc)
 {
+    /* fix: a destroyed gc must not stay the Glide owner (a failed loseCurrent left it there for the next
+    ** WM_ACTIVATE) */
+    if (g_glideOwnerGC == gc) g_glideOwnerGC = NULL;     /* (Glide is not closed here: that crashed at exit, Heretic 2) */
     __glFreeBufData(gc);                                 /* __glFreeBufData */
     __glDestroyContext(gc);                                      /* __glDestroyContext */
     __GL_FREE(gc, gc->hwcx.stagingAlloc);          /* (wglDevCreateContext) */
@@ -671,11 +674,11 @@ GLubyte __fastcall wglDevNotifyResize(__GLcontext *gc, GLint x, GLint y, GLuint 
     __glUpdateViewport(gc);                                   /* __glUpdateViewport */
     wglDevCheckViewportInside(gc);
     if (fallback) {
-        wr->swFallback = 1;
+        if (wr != NULL) wr->swFallback = 1;         /* fix: no window rect (freed, or a DIB drawable) */
         if (!wasSW) ((void (__fastcall *)(__GLcontext *))wglDevForceSWRendering)(gc);       /* EDX not set */
         return 0xf1;
     }
-    wr->swFallback = 0;
+    if (wr != NULL) wr->swFallback = 0;
     if (wasSW) { ((void (__fastcall *)(__GLcontext *))wglDevReturnToHWRendering)(gc); return 0xf1; }   /* EDX not set */
     return 1;
 }
@@ -844,7 +847,8 @@ void __fastcall wglDevSwapBuffers(__GLcontext *gc)
 {
     __WGLrc *rc = GC_imports_wscx(gc);
 
-    if (**gc->hwcx.cmdTransportInfo->ptrLostContext != 0) {   /* Glide lost its context: no swap */
+    if (gc->hwcx.cmdTransportInfo != NULL                     /* fix: not checked in the original */
+        && **gc->hwcx.cmdTransportInfo->ptrLostContext != 0) {   /* Glide lost its context: no swap */
         if (gc->hwcx.windowed && wglDisplayQuery() != 1)
             winRestoreSurfaces(&rc->window->dp, gc);              /* restore the DirectDraw surfaces */
         return;

@@ -25,7 +25,7 @@ const char *WINAPI wglGetExtensionsStringARB(HDC hdc)
     if (__glCurrentGC()->beginMode == 1) {     /* __GL_SETUP_NOT_IN_BEGIN (a second TEB fetch) */ __glSetError(GL_INVALID_OPERATION); return NULL; }
     rc = wglRcFromGC(gc);
     if (rc != NULL && hdc == rc->hdc) return gc->hwcx.extString;
-    __glSetError(ERROR_DC_NOT_FOUND);   /* 0x591: a Win32 code through __glSetError (original): glGetError returns it */
+    SetLastError(ERROR_DC_NOT_FOUND);   /* fix: the original passed this Win32 code to __glSetError */
     return NULL;
 }
 
@@ -116,7 +116,7 @@ static BOOL WINAPI wglPixelFormatAttribs(HDC hdc, int iPixelFormat, int iLayerPl
 
     if (__glCurrentGC()->beginMode == 1) {     /* __GL_SETUP_NOT_IN_BEGIN (a second TEB fetch) */ __glSetError(GL_INVALID_OPERATION); return FALSE; }
     rc = wglRcFromGC(gc);
-    if (rc == NULL || hdc != rc->hdc) { __glSetError(ERROR_DC_NOT_FOUND); return FALSE; }     /* as above */
+    if (rc == NULL || hdc != rc->hdc) { SetLastError(ERROR_DC_NOT_FOUND); return FALSE; }     /* as above */
     memset(&fmt, 0, sizeof(fmt));
     fmt.pfd.nSize = sizeof(fmt);        /* 0x2c (sic: the PFD and the sample count) */
     fmt.pfd.nVersion = 1;

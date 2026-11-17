@@ -319,14 +319,14 @@ static const char *s_dciNames[10] = {   /* 690ee9d8 */
 
 /* 690115c8 -- wglDCIOpen ("__wglInitializeDCI", ref-counted): on the first reference load DCIMAN32.DLL and its ten
 ** entry points, open the DCI provider and create the DCI primary surface; FALSE on failure (a failed provider or
-** primary undoes through wglDCIClose; a failed LoadLibrary keeps the reference counted) */
+** primary undoes through wglDCIClose) */
 GLboolean wglDCIOpen(void)
 {
     int i;
     if (++g_dciRefs <= 1) {
         if (g_hDciman == NULL) {
             g_hDciman = LoadLibraryA("DCIMAN32.DLL");
-            if (g_hDciman == NULL) return FALSE;
+            if (g_hDciman == NULL) { g_dciRefs--; return FALSE; }     /* fix: the reference stayed counted */
             for (i = 0; i < 10; i++) ((FARPROC *)&s_dci)[i] = GetProcAddress(g_hDciman, s_dciNames[i]);
         }
         if (g_dciProvider == NULL && (g_dciProvider = s_dci.DCIOpenProvider()) == NULL) {

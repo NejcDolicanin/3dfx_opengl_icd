@@ -299,7 +299,10 @@ static DWORD s_reopenTick;              /* GetTickCount of the swap's last reope
 GLboolean __fastcall wglGlideWindowSwap(__WGLwindow *w)
 {
     __GLcontext *gc = g_glideOwnerGC;
-    GLint *open = &g_glideOwnerGC->fx.glideOpen;          /* (no NULL check, as in the original) */
+    GLint *open;
+
+    if (gc == NULL || gc == g_nullGC) return GL_TRUE;     /* fix: no owner (the original did not check) */
+    open = &gc->fx.glideOpen;
 
     if (*open != 0) {
         if (grSelectContext(g_glideOwnerGC->hwcx.glideContext) == 0) {
@@ -512,11 +515,18 @@ static void __fastcall lfbLock(__WGLbuffer *buf, __WGLdrawable *dp)             
 {
     GrLfbInfo_t info;
     GrBuffer_t which = (&dp->frontBuffer != buf);          /* front = 0, back = 1 */
+    if (!buf->readlock && !buf->writelock) return;         /* fix: with neither lock the original used an unset info */
     info.size = sizeof(info);
     if (buf->readlock && !grLfbLock(GR_LFB_READ_ONLY, which, GR_LFBWRITEMODE_ANY, GR_ORIGIN_UPPER_LEFT, FXFALSE, &info)) return;
     ICD_LFB(buf->readlock ? 1 : 0);
     info.size = sizeof(info);
-    if (buf->writelock && !grLfbLock(GR_LFB_WRITE_ONLY, which, GR_LFBWRITEMODE_ANY, GR_ORIGIN_UPPER_LEFT, FXFALSE, &info)) return;
+    if (buf->writelock && !grLfbLock(GR_LFB_WRITE_ONLY, which, GR_LFBWRITEMODE_ANY, GR_ORIGIN_UPPER_LEFT, FXFALSE, &info)) {
+        if (buf->readlock) {                               /* fix: the original kept the read lock */
+            grLfbUnlock(GR_LFB_READ_ONLY, which);
+            ICD_LFB(-1);
+        }
+        return;
+    }
     ICD_LFB(buf->writelock ? 1 : 0);
     buf->base = info.lfbPtr;
     buf->byteWidth = info.strideInBytes;
@@ -579,11 +589,10 @@ static void __fastcall lfbDepthUnlock(__WGLbuffer *buf, __WGLdrawable *dp)      
     ICD_LFB(-1);
     buf->base = pv->savedBase;
 }
-/* 69015510 -- lfbDepthFree: free the private and buf->base, and clear buf->free */
+/* 69015510 -- lfbDepthFree: free the private and clear buf->free */
 static void __fastcall lfbDepthFree(__WGLbuffer *buf, __WGLdrawable *dp)                    /* 69015510 */
 {
-    dp->free(buf->private_);
-    dp->free(buf->base);
+    dp->free(buf->private_);       /* (fix: the original also freed buf->base, which is NULL or the LFB) */
     buf->free = NULL;
 }
 
@@ -662,13 +671,13 @@ void __fastcall wglGlideValidate(__GLcontext *gc)
     if (gc->hwcx.swRendering != 0) { (*gc->procs.validate)(gc); return; }   /* switched to software meanwhile */
     ((void (__fastcall *)(__GLcontext *))hwFlushGrState)(gc);   /* flush the Glide state records; EDX not set */
 }
-/* 69015c70 -- validate (sw): phase-2 pick, revalidate; procs.validate if back on hw, else self-copy the dispatch */
+/* 69015c70 -- validate (sw): phase-2 pick, revalidate; procs.validate if back on hw */
 void __fastcall wglGlideValidateSW(__GLcontext *gc)
 {
     (*gc->procs.pickAllProcsPhase2)(gc);
     ((void (__fastcall *)(__GLcontext *))__glSSTRevalidate)(gc);   /* revalidate; EDX not set */
     if (gc->hwcx.swRendering == 0) { (*gc->procs.validate)(gc); return; }   /* back on the hardware meanwhile */
-    __glCopyDispatchTable(&__glCurrentGC()->currentDispatchState, &__glCurrentGC()->currentDispatchState);
+    /* (the original ended by copying the current dispatch state onto itself: dropped) */
 }
 /* 69015cd0 -- the polygon face / cull part of __glGenericPickTriangleProcs (s_pick.c): polygon.cullFace and
 ** polygon.face[] from glCullFace / glFrontFace.  Unlike the SI, GL_FRONT_AND_BACK does not return early. */

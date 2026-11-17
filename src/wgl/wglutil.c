@@ -427,6 +427,7 @@ BOOL __fastcall wglAttachMessageHook(HWND hwnd)
     __WGLthread *t;
     HHOOK hook;
 
+    if (hwnd == NULL) return TRUE;            /* fix: a memory DC: thread 0 would make the hook system-wide */
     t = (__WGLthread *)TlsGetValue(g_tlsThread);
     if (t == NULL) {
         wglAttachThread(g_hInstance);
@@ -547,7 +548,7 @@ __WGLwindow *__fastcall wglFindWindow(HDC hdc, HWND hwnd)
 ** hwnd: a copy of the modes, its own lock (wglNewCritSect), the wgl allocators and drawable procs, a swap
 ** region (RGNDATAHEADER with room for 4 rects), the device's destroy / paletteChanged callbacks, and the device's
 ** initWindow (hwnd) or initBitmap (memory DC: pixmapMode 1).  Linked into the window list with refCount 1 and
-** the message hook attached (wglAttachMessageHook(hwnd), also for a NULL hwnd); no allocation is checked */
+** the message hook attached (wglAttachMessageHook(hwnd)); NULL when out of memory */
 __WGLwindow *__fastcall wglCreateWindow(HDC hdc, HWND hwnd, const __WGLmodes *modes)
 {
     __WGLwindow *w;
@@ -558,6 +559,7 @@ __WGLwindow *__fastcall wglCreateWindow(HDC hdc, HWND hwnd, const __WGLmodes *mo
     if (w != NULL) wglDestroyWindow(w);
 
     w = (__WGLwindow *)wglMalloc(sizeof(__WGLwindow));           /* 0xa1 dwords */
+    if (w == NULL) return NULL;                                  /* fix: no allocation was checked */
     memset(w, 0, sizeof(__WGLwindow));
     w->hdc  = hdc;
     w->hwnd = hwnd;
@@ -565,6 +567,12 @@ __WGLwindow *__fastcall wglCreateWindow(HDC hdc, HWND hwnd, const __WGLmodes *mo
     glPriv = &w->dp;
     glPriv->modes = (__WGLmodes *)wglMalloc(sizeof(__WGLmodes));
     glPriv->lock  = wglNewCritSect();
+    rects = (DWORD *)wglMalloc(0x64);                            /* RGNDATAHEADER + room for the 4 rects of swapRectCapacity */
+    if (glPriv->modes == NULL || glPriv->lock == NULL || rects == NULL) {
+        if (glPriv->lock != NULL) wglDeleteCritSect(glPriv->lock);
+        wglFree(glPriv->modes); wglFree(rects); wglFree(w);
+        return NULL;
+    }
     memcpy(glPriv->modes, modes, sizeof(__WGLmodes));
     glPriv->malloc  = wglMalloc;
     glPriv->calloc  = wglCalloc;
@@ -577,7 +585,6 @@ __WGLwindow *__fastcall wglCreateWindow(HDC hdc, HWND hwnd, const __WGLmodes *mo
     glPriv->window   = w;
     glPriv->regionValid = 1;
     w->swapRectCapacity = 4;
-    rects = (DWORD *)wglMalloc(0x64);                            /* RGNDATAHEADER + room for the 4 rects of swapRectCapacity */
     w->swapRegion = (__WGLswapRegion *)rects;
     rects[0] = 0x20; rects[1] = 1;
     rects[2] = 0; rects[3] = 0; rects[7] = 0; rects[5] = 0; rects[6] = 0; rects[4] = 0;
@@ -612,9 +619,13 @@ __WGLwindow *__fastcall wglGetWindow(HDC hdc, HWND hwnd, const __WGLmodes *modes
 GLboolean __fastcall wglDestroyWindow(__WGLwindow *w)
 {
     __WGLdrawable *dp = &w->dp;
+    __WGLwindow *o;
     if (--w->dp.refCount > 0) return FALSE;
-    wglDetachMessageHook();
     wglWindowListRemove(w);
+    /* fix: the hook goes with the last window; the original dropped it whenever any window was freed, which left
+    ** the remaining windows without their WM_ACTIVATE / resize handling */
+    for (o = g_windowList; o != NULL; o = o->next) if (o->hwnd != NULL) break;
+    if (o == NULL) wglDetachMessageHook();
     if (dp->freeBuffers != NULL) dp->freeBuffers(dp);
     if (w->destroy != NULL) w->destroy(w);
     wglFree(w->swapRegion);
@@ -767,6 +778,7 @@ GLboolean __fastcall wglRcCreateGC(__WGLrc *rc, int layerPlane)
     g_wglImports[8] = rc;
     m->layerPlane = (GLboolean)layerPlane;
     rc->gc = g_device->createContext(g_wglImports, m);     /* ecx = 690ee398 g_wglImports, edx = modes (checked) */
+    if (rc->gc == NULL) { wglFree(m); rc->modes = NULL; }  /* fix: the modes leaked */
     return rc->gc != NULL;
 }
 

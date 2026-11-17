@@ -96,15 +96,15 @@ static BOOL wglCombinedInit(void)                      /* 6900ee20 */
     return TRUE;
 }
 /* 6900ee50 -- wglOutlinePush: append v to g_outline[], growing it by 4000 floats (wglRealloc) when full; FALSE if
-** the realloc fails (g_outlineCap is raised anyway) */
+** the realloc fails */
 static BOOL __fastcall wglOutlinePush(float v)         /* 6900ee50 (value is the 3rd arg) */
 {
     if (g_outlineLen >= g_outlineCap) {
         float *p;
-        g_outlineCap += 4000;
-        p = (float *)wglRealloc(g_outline, g_outlineCap * sizeof(float));
+        p = (float *)wglRealloc(g_outline, (g_outlineCap + 4000) * sizeof(float));
         if (p == NULL) return FALSE;
         g_outline = p;
+        g_outlineCap += 4000;                   /* fix: only after the realloc worked */
     }
     g_outline[g_outlineLen] = v;
     g_outlineLen++;
@@ -252,8 +252,14 @@ static void CALLBACK tessError(GLenum e) { g_tessError = e; }    /* 6900e980 */
 static void CALLBACK tessCombine(GLdouble coords[3], void *d[4], GLfloat w[4], void **out)   /* 6900e900 */
 {
     (void)d; (void)w;
-    if (!wglCombinedPush((float)coords[0]) || !wglCombinedPush((float)coords[1]) || !wglCombinedPush((float)coords[2]))
+    /* fix: all three or none; when the buffer is full GLU gets the last complete vertex (the original could hand
+    ** it a mix of two) */
+    if (g_combinedLen + 3 > g_combinedCap) {
         g_tessError = GL_OUT_OF_MEMORY;
+        *out = g_combined + (g_combinedLen >= 3 ? g_combinedLen - 3 : 0);
+        return;
+    }
+    wglCombinedPush((float)coords[0]); wglCombinedPush((float)coords[1]); wglCombinedPush((float)coords[2]);
     *out = g_combined + g_combinedLen - 3;
 }
 
@@ -426,7 +432,7 @@ static HFONT __fastcall wglCreateEmFont(HDC hdc)
     otm = (LPOUTLINETEXTMETRICA)wglMalloc(n);
     if (otm == NULL) return NULL;
     otm->otmSize = n;
-    if (GetOutlineTextMetricsA(hdc, n, otm) == 0) return NULL;
+    if (GetOutlineTextMetricsA(hdc, n, otm) == 0) { wglFree(otm); return NULL; }     /* fix: otm leaked */
     fontHeight = otm->otmTextMetrics.tmHeight - otm->otmTextMetrics.tmInternalLeading;
     fontWidth = otm->otmTextMetrics.tmAveCharWidth;
     fontUnits = (LONG)otm->otmEMSquare;
@@ -446,65 +452,79 @@ static HFONT __fastcall wglCreateEmFont(HDC hdc)
     lf.lfPitchAndFamily = otm->otmTextMetrics.tmPitchAndFamily & 0xf0;
     strcpy(lf.lfFaceName, (char *)otm + (UINT_PTR)otm->otmpFaceName);
     g_scaledFont = CreateFontIndirectA(&lf);
-    if (g_scaledFont == NULL) return NULL;
     wglFree(otm);
     return g_scaledFont;
 }
 
-/* 6900de90 -- wglUseFontOutlinesA: wglSAUseFontOutlinesA: clear pending GL errors, select a copy of the DC's font
-** scaled to its em square, and for each of the count glyphs from first get its GGO_NATIVE outline, fill gmf[] (in
-** em units; gmf is used unchecked) and compile list listBase + i (wglGlyphList, chordal deviation passed as
-** g_emScale + deviation); then restore the font and return TRUE when GL raised no error.  The scaled font is never
-** deleted, and the early FALSE returns leave it selected */
-BOOL WINAPI wglSAUseFontOutlinesA(HDC hdc, DWORD first, DWORD count, DWORD listBase, FLOAT deviation,
-                                  FLOAT extrusion, int format, LPGLYPHMETRICSFLOAT gmf)
+/* 6900de90 -- wglUseFontOutlinesA / W: clear pending GL errors, select a copy of the DC's font scaled to its em
+** square, and for each of the count glyphs from first get its GGO_NATIVE outline, fill gmf[] when given (in em
+** units) and compile list listBase + i (wglGlyphList; chordal deviation 0 means one design unit); then restore
+** and delete the font and return TRUE when GL raised no error.  Fixes: the scaled font was never deleted and
+** stayed selected on the early returns, gmf was written without a NULL check, the deviation was passed as
+** g_emScale + deviation, and the W entry treated its characters as ANSI */
+static BOOL wglFontOutlinesImpl(HDC hdc, DWORD first, DWORD count, DWORD listBase, FLOAT deviation,
+                               FLOAT extrusion, int format, LPGLYPHMETRICSFLOAT gmf, BOOL wide)
 {
     GLYPHMETRICS gm;
-    LPVOID buf;
+    GLYPHMETRICSFLOAT local;
+    LPVOID buf = NULL;
     DWORD cap, size;
     UINT ch;
+    BOOL ok = FALSE;
 
     while (glGetError() != GL_NO_ERROR) ;
     g_scaledFont = wglCreateEmFont(hdc);
     if (g_scaledFont == NULL) return FALSE;
     g_oldFont = SelectObject(hdc, g_scaledFont);
-    if (g_oldFont == NULL) return FALSE;
+    if (g_oldFont == NULL) goto done;
     cap = 0x2800;
     buf = wglMalloc(cap);
-    if (buf == NULL) return FALSE;
+    if (buf == NULL) goto done;
     for (ch = first; ch - first < count; ch++) {
-        LPGLYPHMETRICSFLOAT m = &gmf[ch - first];
-        size = GetGlyphOutlineA(hdc, ch, GGO_NATIVE, &gm, 0, NULL, &g_identityMat);
+        LPGLYPHMETRICSFLOAT m = gmf != NULL ? &gmf[ch - first] : &local;
+        size = wide ? GetGlyphOutlineW(hdc, ch, GGO_NATIVE, &gm, 0, NULL, &g_identityMat)
+                    : GetGlyphOutlineA(hdc, ch, GGO_NATIVE, &gm, 0, NULL, &g_identityMat);
+        if (size == GDI_ERROR) goto done;
         if (size > cap) {
             wglFree(buf);
             cap = size;
             buf = wglMalloc(size);
-            if (buf == NULL) return FALSE;
+            if (buf == NULL) goto done;
         }
-        GetGlyphOutlineA(hdc, ch, GGO_NATIVE, &gm, cap, buf, &g_identityMat);
+        if (wide) GetGlyphOutlineW(hdc, ch, GGO_NATIVE, &gm, cap, buf, &g_identityMat);
+        else      GetGlyphOutlineA(hdc, ch, GGO_NATIVE, &gm, cap, buf, &g_identityMat);
         m->gmfBlackBoxX = (float)gm.gmBlackBoxX * g_emScale;
         m->gmfBlackBoxY = (float)gm.gmBlackBoxY * g_emScale;
         m->gmfptGlyphOrigin.x = (float)gm.gmptGlyphOrigin.x * g_emScale;
         m->gmfptGlyphOrigin.y = (float)gm.gmptGlyphOrigin.y * g_emScale;
         m->gmfCellIncX = (float)gm.gmCellIncX * g_emScale;
         m->gmfCellIncY = (float)gm.gmCellIncY * g_emScale;
-        if (!wglGlyphList(listBase + (ch - first), (const BYTE *)buf, size, m, g_emScale + deviation, extrusion, format)) {
-            wglFree(buf);
-            return FALSE;
-        }
+        if (!wglGlyphList(listBase + (ch - first), (const BYTE *)buf, size, m,
+                          deviation != 0.0f ? deviation : g_emScale, extrusion, format))
+            goto done;
     }
-    wglFree(buf);
-    SelectObject(hdc, g_oldFont);
+    ok = TRUE;
+done:
+    if (buf != NULL) wglFree(buf);
+    if (g_oldFont != NULL) SelectObject(hdc, g_oldFont);
+    DeleteObject(g_scaledFont);
+    g_scaledFont = NULL;
+    if (!ok) return FALSE;
     if (glGetError() == GL_NO_ERROR) return TRUE;
     while (glGetError() != GL_NO_ERROR) ;
     return FALSE;
 }
+BOOL WINAPI wglSAUseFontOutlinesA(HDC hdc, DWORD first, DWORD count, DWORD listBase, FLOAT deviation,
+                                  FLOAT extrusion, int format, LPGLYPHMETRICSFLOAT gmf)
+{
+    return wglFontOutlinesImpl(hdc, first, count, listBase, deviation, extrusion, format, gmf, FALSE);
+}
 
-/* 6900de60 -- W variant just forwards (the original passes the A arguments through) */
+/* 6900de60 -- the W entry (the original called the A one) */
 BOOL WINAPI wglSAUseFontOutlinesW(HDC hdc, DWORD first, DWORD count, DWORD listBase, FLOAT deviation,
                                   FLOAT extrusion, int format, LPGLYPHMETRICSFLOAT gmf)
 {
-    return wglSAUseFontOutlinesA(hdc, first, count, listBase, deviation, extrusion, format, gmf);
+    return wglFontOutlinesImpl(hdc, first, count, listBase, deviation, extrusion, format, gmf, TRUE);
 }
 
 /* 6900f240 -- flip a 1-bpp glyph bitmap vertically (GDI top-down -> GL bottom-up), rows padded to 32 bits */
@@ -525,8 +545,8 @@ static void __fastcall wglFlipBitmap(int width, int height, const DWORD *src, DW
 ** listBase + i holding one glBitmap of its GGO_BITMAP image (flipped bottom-up; xorig +gmptGlyphOrigin.x, yorig
 ** blackbox height - origin y, advance gmCellIncX/Y; an empty glyph only advances); FALSE with
 ** ERROR_INVALID_PARAMETER when GetRasterizerCaps, an allocation or GetGlyphOutline fails, after deleting the lists
-** from (ch + listBase), ch - first of them */
-BOOL WINAPI wglSAUseFontBitmapsA(HDC hdc, DWORD first, DWORD count, DWORD listBase)
+** made so far.  `wide` selects GetGlyphOutlineW */
+static BOOL wglFontBitmapsImpl(HDC hdc, DWORD first, DWORD count, DWORD listBase, BOOL wide)
 {
     MAT2 mat;
     GLYPHMETRICS gm;
@@ -548,7 +568,13 @@ BOOL WINAPI wglSAUseFontBitmapsA(HDC hdc, DWORD first, DWORD count, DWORD listBa
     }
     for (ch = first; ch < first + count; ch++) {
         glNewList(listBase + (ch - first), GL_COMPILE);
-        size = GetGlyphOutlineA(hdc, ch, GGO_BITMAP, &gm, 0, buf, &mat);      /* (the buffer, with size 0) */
+        size = wide ? GetGlyphOutlineW(hdc, ch, GGO_BITMAP, &gm, 0, NULL, &mat)
+                    : GetGlyphOutlineA(hdc, ch, GGO_BITMAP, &gm, 0, NULL, &mat);
+        if (size == GDI_ERROR) {
+            glEndList();
+            result = FALSE;
+            goto fail;
+        }
         if (size > cap) {
             if (buf) wglFree(buf);
             if (flipped) wglFree(flipped);
@@ -561,7 +587,8 @@ BOOL WINAPI wglSAUseFontBitmapsA(HDC hdc, DWORD first, DWORD count, DWORD listBa
                 goto fail;
             }
         }
-        if (GetGlyphOutlineA(hdc, ch, GGO_BITMAP, &gm, size, buf, &mat) == GDI_ERROR) {
+        if ((wide ? GetGlyphOutlineW(hdc, ch, GGO_BITMAP, &gm, size, buf, &mat)
+                  : GetGlyphOutlineA(hdc, ch, GGO_BITMAP, &gm, size, buf, &mat)) == GDI_ERROR) {
             glEndList();
             result = FALSE;
             goto fail;
@@ -580,15 +607,20 @@ BOOL WINAPI wglSAUseFontBitmapsA(HDC hdc, DWORD first, DWORD count, DWORD listBa
     goto done;
 fail:
     wglSystemError("wglUseFontBitmaps", ERROR_INVALID_PARAMETER);
-    glDeleteLists(ch + listBase, ch - first);     /* (sic: from the failing glyph's list on) */
+    glDeleteLists(listBase, ch - first + 1);      /* fix: the lists made so far (the original named a wrong range) */
 done:
     if (buf) wglFree(buf);
     if (flipped) wglFree(flipped);
     return result;
 }
 
-/* 6900efb0 -- wglSAUseFontBitmapsW: just calls wglSAUseFontBitmapsA with the same arguments */
+BOOL WINAPI wglSAUseFontBitmapsA(HDC hdc, DWORD first, DWORD count, DWORD listBase)
+{
+    return wglFontBitmapsImpl(hdc, first, count, listBase, FALSE);
+}
+
+/* 6900efb0 -- wglSAUseFontBitmapsW (fix: the original called the A version with the wide character codes) */
 BOOL WINAPI wglSAUseFontBitmapsW(HDC hdc, DWORD first, DWORD count, DWORD listBase)
 {
-    return wglSAUseFontBitmapsA(hdc, first, count, listBase);
+    return wglFontBitmapsImpl(hdc, first, count, listBase, TRUE);
 }
