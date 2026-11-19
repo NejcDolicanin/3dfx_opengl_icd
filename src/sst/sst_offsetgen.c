@@ -6,8 +6,9 @@
 ** restoring it after: two register writes per offset triangle, each draining the pixel pipeline.  Now the
 ** routines are stubs that call sst_render.c's hwOffsetApply / hwOffsetApplyIdx / hwOffsetUndo, which put the same
 ** amount into the vertices' window z instead (MesaFX's way; SoF's decals cost 3 fps through the register).  The
-** callers' registers are preserved (eax, ecx, edx saved; ebx, esi, edi, ebp by the callee); femms first on a 3DNow
-** CPU, as the callers leave the MMX state in use and the helpers use x87.
+** callers' registers are preserved (eax, ecx, edx saved; ebx, esi, edi, ebp by the callee).  femms / emms first:
+** the callers can leave the MMX state in use and the helpers use x87, which then gives NaNs and no offset (Quake 3's
+** decals and blob shadows: thin see-through lines that came and went).
 */
 #include "wglpriv.h"
 #include "og.h"
@@ -19,7 +20,7 @@ typedef struct OffsetGenBlockRec {
     GLuint      proc[3];
 } OffsetGenBlock;
 
-/* one stub: save eax / ecx / edx, [femms], push the arguments (right to left), call the __cdecl helper, pop */
+/* one stub: save eax / ecx / edx, femms / emms, push the arguments (right to left), call the __cdecl helper, pop */
 static GLubyte *og_offsetStub(__GLcontext *gc, GLubyte *pc, void *helper, GLboolean withVertices)
 {
     EMIT(og_push(gc, R(eax)));
@@ -27,6 +28,8 @@ static GLubyte *og_offsetStub(__GLcontext *gc, GLubyte *pc, void *helper, GLbool
     EMIT(og_push(gc, R(edx)));
     if (gc->constants.cpuCaps & __GL_CPU_3DNOW)
         EMIT(og_femms(gc));
+    else if (gc->constants.cpuCaps & (__GL_CPU_SSE | __GL_CPU_MMX))
+        EMIT(og_emms(gc));
     if (withVertices) {
         EMIT(og_push(gc, R(ecx)));          /* c */
         EMIT(og_push(gc, R(ebx)));          /* b */
