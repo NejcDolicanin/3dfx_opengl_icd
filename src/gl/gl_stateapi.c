@@ -164,6 +164,14 @@ void __stdcall __glim_StencilMask(GLuint sm)
     gc->validateMask |= __GL_VALIDATE_STENCIL_FUNC;
 }
 
+/* glCompressedTexImage1DARB / glCompressedTexSubImage1DARB (seven arguments each): no compressed format of this
+** driver has 1D images.  The original's table had __glCalcMixedTexture in both slots: a call crashed */
+void __stdcall __glim_CompressedTex1DARB(GLenum target, GLint level, GLint a3, GLint a4, GLint a5, GLsizei imageSize,
+                                         const GLvoid *data)
+{
+    __glSetError(GL_INVALID_ENUM);
+}
+
 /* 690b4620 -- __glim_FogCoorddEXT: glFogCoorddEXT: the ICD stores 1 - c (computed in double) */
 void __stdcall __glim_FogCoorddEXT(GLdouble coord)
 {

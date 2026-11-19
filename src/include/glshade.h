@@ -37,7 +37,7 @@
 /* the ICD moved the texture flags: perspective 0x2000000, projection-scaled 0x800000 */
 #define __GL_SHADE_PROJSCALED_TEXTURE   0x00800000
 #define __GL_SHADE_PERSP_TEXTURE        0x02000000
-#define __GL_SHADE_MIPMAP_TEXTURE       0x04000000      /* ICD: unit 0 minifies with a mipmap filter */
+#define __GL_SHADE_MIPMAP_TEXTURE       0x04000000      /* ICD: an enabled unit minifies with a mipmap filter */
 /* ICD: the fragment alpha is needed (blending, the alpha test or alpha bitplanes; the sst mode flags 69064... set
 ** it with the blend / alpha-test bits) */
 #define __GL_SHADE_NEEDS_ALPHA          0x08000000

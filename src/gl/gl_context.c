@@ -328,7 +328,7 @@ void __fastcall __glSoftResetContext(__GLcontext *gc)
     }
     gc->state.current.validRasterPos = GL_TRUE;
     gc->state.current.edgeTag = 0x1000;
-    gc->state.current.fogCoord = zero;
+    gc->state.current.fogCoord = one;           /* kept as 1 - c: the coordinate starts at 0 (was 0, i.e. c = 1) */
 
     /* GL_FOG_BIT state */
     gc->state.fog.mode = GL_EXP;

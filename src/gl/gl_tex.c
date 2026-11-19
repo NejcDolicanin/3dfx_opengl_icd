@@ -1755,13 +1755,13 @@ __GLfloat __fastcall __glComputeLineRho(__GLcontext *gc, GLint unit,
 }
 
 /* 690a4ff0 -- __glTextureFragmentUVScale (3dfx S_TEX.C): unit 0's texture proc with s and t scaled by level
-** 0's width (both by width2f, as the ancestor) */
+** 0's width and height (fix: the original and the ancestor scaled t by the width too) */
 void __fastcall __glTextureFragmentUVScale(__GLcontext *gc, __GLcolor *color, __GLfloat s, __GLfloat t, __GLfloat rho)
 {
     __GLmipMapLevelICD *lp = __glCurrentTexture(gc, 0)->level[0];
 
     (*(void (__fastcall *)(__GLcontext *, __GLcolor *, __GLfloat, __GLfloat, __GLfloat))
-        gc->procs.texture[0])(gc, color, s * lp->width2f, t * lp->width2f, rho);
+        gc->procs.texture[0])(gc, color, s * lp->width2f, t * lp->height2f, rho);
 }
 
 /* 690a5030 -- __glFastTextureFragment */

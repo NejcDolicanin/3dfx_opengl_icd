@@ -793,7 +793,7 @@ void __fastcall hwPickDrawRoutines(__GLcontext *gc)
 /* 690653a0 (size 481) -- computeModeFlags: compute modeFlags: build gc->polygon.shader.modeFlags (the
 ** __GL_SHADE_* bits) from the enables and modes: RGB with logic op / blend / alpha test / alpha bitplanes (blend
 ** and alpha test also set NEEDS_ALPHA), or CI logic op / writemask / index test; a write mask sets MASK; texturing
-** sets TEXTURE, the persp / projection-scaled bits and MIPMAP_TEXTURE when unit 0's min filter is a mipmap one;
+** sets TEXTURE, the persp / projection-scaled bits and MIPMAP_TEXTURE when an enabled unit's min filter is a mipmap one;
 ** smooth shading, depth test with depth buffer (+ polygon offset fill with a nonzero factor or units), cull face,
 ** dither on a front buffer of under 3 bytes per element, stipples, stencil, two-sided lighting, and slow (textured)
 ** or cheap fog */
@@ -834,10 +834,15 @@ void __fastcall computeModeFlags(__GLcontext *gc)
     }
     if (gc->texture.textureEnabled[0] || gc->texture.textureEnabled[1]) {
         modeFlags |= __GL_SHADE_TEXTURE;
-        if (__glCurrentTexture(gc, 0) &&
-            __glCurrentTexture(gc, 0)->params.minFilter != GL_NEAREST &&
-            __glCurrentTexture(gc, 0)->params.minFilter != GL_LINEAR) {
-            modeFlags |= __GL_SHADE_MIPMAP_TEXTURE;
+        {   /* fix: every enabled unit (the original looked at unit 0's texture only, enabled or not) */
+            GLint unit;
+            for (unit = 0; unit < 2; unit++) {
+                if (gc->texture.textureEnabled[unit] && __glCurrentTexture(gc, unit) &&
+                    __glCurrentTexture(gc, unit)->params.minFilter != GL_NEAREST &&
+                    __glCurrentTexture(gc, unit)->params.minFilter != GL_LINEAR) {
+                    modeFlags |= __GL_SHADE_MIPMAP_TEXTURE;
+                }
+            }
         }
         modeFlags |= __GL_SHADE_PROJSCALED_TEXTURE | __GL_SHADE_PERSP_TEXTURE;
     }

@@ -2209,16 +2209,17 @@ void __fastcall CopyTexCoord4d(GLint unit, __GLcontext *gc, const GLdouble *tp, 
     v->texture[unit].x = tp[0]; v->texture[unit].y = tp[1]; v->texture[unit].z = tp[2]; v->texture[unit].w = tp[3];
 }
 
-/* 690af4d0 -- CopyFogCoordf (ICD, EXT_fog_coord arrays): the coordinate as given (glFogCoordfEXT stores 1 - c) */
+/* 690af4d0 -- CopyFogCoordf (ICD, EXT_fog_coord arrays): 1 - c, as glFogCoordfEXT and the generated array copy
+** (CopyFogCoord) store it (fix: the original stored c here) */
 void __fastcall CopyFogCoordf(__GLcontext *gc, const GLfloat *fp, __GLvertexICD *v)
 {
-    v->fogCoord = fp[0];
+    v->fogCoord = 1.0f - fp[0];
 }
 
 /* 690af4e0 -- CopyFogCoordd */
 void __fastcall CopyFogCoordd(__GLcontext *gc, const GLdouble *fp, __GLvertexICD *v)
 {
-    v->fogCoord = fp[0];
+    v->fogCoord = (__GLfloat)(1.0 - fp[0]);
 }
 
 /* 690af4f0 -- __glim_LockArraysEXT (s_varray.c) */

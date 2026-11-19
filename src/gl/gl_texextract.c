@@ -334,8 +334,8 @@ void __fastcall __glExtractTexelRGBA8_B(__GLmipMapLevelICD *level, __GLtextureIC
     result->a = image[3];
 }
 
-/* 690a2e70 -- __glExtractTexelA8_B (row << widthLog2 as in the SI, not row * width: the level width
-** includes the border) */
+/* 690a2e70 -- __glExtractTexelA8_B (fix: row * width, the level width includes the border; the original and the
+** SI shifted by widthLog2) */
 void __fastcall __glExtractTexelA8_B(__GLmipMapLevelICD *level, __GLtextureICD *tex,
                              GLint img, GLint row, GLint col, __GLtexel *result)
 {
@@ -343,11 +343,11 @@ void __fastcall __glExtractTexelA8_B(__GLmipMapLevelICD *level, __GLtextureICD *
 
     row++;
     col++;
-    image = (GLubyte *)level->buffer + (row << level->widthLog2) + col;
+    image = (GLubyte *)level->buffer + (row * level->width) + col;
     result->a = image[0];
 }
 
-/* 690a2ea0 -- __glExtractTexelI8_B (row << widthLog2, as A8_B) */
+/* 690a2ea0 -- __glExtractTexelI8_B (row * width, as A8_B) */
 void __fastcall __glExtractTexelI8_B(__GLmipMapLevelICD *level, __GLtextureICD *tex,
                              GLint img, GLint row, GLint col, __GLtexel *result)
 {
@@ -356,7 +356,7 @@ void __fastcall __glExtractTexelI8_B(__GLmipMapLevelICD *level, __GLtextureICD *
 
     row++;
     col++;
-    image = (GLubyte *)level->buffer + (row << level->widthLog2) + col;
+    image = (GLubyte *)level->buffer + (row * level->width) + col;
     intensity = image[0];
     result->r = intensity;
     result->g = intensity;

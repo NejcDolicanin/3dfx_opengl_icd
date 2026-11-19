@@ -18,7 +18,7 @@ GLubyte g_disableOgDrawVertexes;
 GLubyte g_disableOgVarray;
 
 #define GL_IUI_V2F_EXT          0x81AD
-#define GL_T4F_C4F_N3F_V4F_EXT_LAST 0x81B4      /* the EXT range reuses the core table from its start */
+#define GL_T4F_C4F_N3F_V4F_EXT_LAST 0x81B4      /* the last IUI format (GL_T2F_IUI_N3F_V3F_EXT) */
 typedef struct __GLinterleavedFormatRec {
     GLboolean enableTexCoord;
     GLboolean enableColor;
@@ -115,7 +115,7 @@ static const __GLinterleavedFormat interleavedFormats[] = {
 	4*__GL_SIZE_F, 0, 8*__GL_SIZE_F, 11*__GL_SIZE_F,
 	15*__GL_SIZE_F,
     },
-    /* GL_EXT_index_array_formats (3dfx): never read, as glInterleavedArrays indexes the EXT range from row 0 */
+    /* GL_EXT_index_array_formats (3dfx) */
     {	/* IUI_V2F */
 	GL_FALSE, GL_FALSE,  GL_TRUE, GL_FALSE, 0, 0, 2, 0,
 	0, 0, 0, __GL_SIZE_I,
@@ -136,9 +136,9 @@ static const __GLinterleavedFormat interleavedFormats[] = {
 	0, 0, __GL_SIZE_I, __GL_SIZE_I+3*__GL_SIZE_F,
 	__GL_SIZE_I+6*__GL_SIZE_F,
     },
-    {	/* T2F_IUI_V2F: the index offset is in the normal's place (original bug, kept) */
+    {	/* T2F_IUI_V2F (fix: the original had the index offset in the normal's place) */
 	 GL_TRUE, GL_FALSE,  GL_TRUE, GL_FALSE, 2, 0, 2, 0,
-	0, 0, 2*__GL_SIZE_F, 2*__GL_SIZE_F+__GL_SIZE_I,
+	0, 2*__GL_SIZE_F, 0, 2*__GL_SIZE_F+__GL_SIZE_I,
 	__GL_SIZE_I+4*__GL_SIZE_F,
     },
     {	/* T2F_IUI_V3F */
@@ -595,7 +595,8 @@ void __stdcall __glim_InterleavedArrays(GLenum format, GLsizei stride,
 
     } else if ((int) format >= GL_IUI_V2F_EXT &&
 	(int) format <= GL_T4F_C4F_N3F_V4F_EXT_LAST) {
-	f = &interleavedFormats[(int) format - (int) GL_IUI_V2F_EXT];
+	/* fix: the IUI rows follow the core ones (the original indexed them from row 0) */
+	f = &interleavedFormats[(int) format - (int) GL_IUI_V2F_EXT + ((int) GL_T4F_C4F_N3F_V4F - (int) GL_V2F + 1)];
 
     } else {
 	__glSetError(GL_INVALID_ENUM);

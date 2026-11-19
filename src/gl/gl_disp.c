@@ -215,7 +215,7 @@ extern int __stdcall __glim_TexEnviv(GLuint, GLuint, GLuint *);
 extern int __stdcall __glim_TexEnvi(GLuint, GLuint, int);
 extern int __stdcall __glim_TexImage1D(GLuint, int, int, int, int, GLuint, GLuint, int);
 extern int __stdcall __glim_TexImage2D(GLuint, int, int, int, int, int, GLuint, GLuint, int);
-extern int __fastcall __glCalcMixedTexture(int, int);
+extern int __stdcall __glim_CompressedTex1DARB(GLuint, int, int, int, int, int, int);
 extern int __stdcall __glim_TexSubImage1D(GLuint, int, GLuint, GLuint, GLuint, GLuint, GLuint);
 extern int __stdcall __glim_TexSubImage2D(GLuint, int, GLuint, GLuint, GLuint, GLuint, GLuint, GLuint, GLuint);
 extern int __stdcall __glim_GenTextures(int, int);
@@ -1487,9 +1487,9 @@ __GLdispatchTable __glSSTImmedState = { {
     (__GLdispatchFn)__glsstim_PointParameterfEXT,       /* extension slot 0x189 */
     (__GLdispatchFn)__glsstim_PointParameterfvEXT,      /* extension slot 0x18a */
     (__GLdispatchFn)__glsstim_BlendEquationEXT,         /* extension slot 0x18b */
-    (__GLdispatchFn)__glCalcMixedTexture,               /* extension slot 0x18c */
+    (__GLdispatchFn)__glim_CompressedTex1DARB,          /* extension slot 0x18c */
     (__GLdispatchFn)__glsstim_CompressedTexImage2DARB,  /* extension slot 0x18d */
-    (__GLdispatchFn)__glCalcMixedTexture,               /* extension slot 0x18e */
+    (__GLdispatchFn)__glim_CompressedTex1DARB,          /* extension slot 0x18e */
     (__GLdispatchFn)__glsstim_CompressedTexSubImage2DARB,/* extension slot 0x18f */
     (__GLdispatchFn)__glsstim_GetCompressedTexImageARB, /* extension slot 0x190 */
     (__GLdispatchFn)glTBufferMask3DFX_impl,             /* extension slot 0x191 */
