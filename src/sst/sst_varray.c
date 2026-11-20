@@ -415,7 +415,18 @@ done:
                 (*gc->vertexArray.fillLockedRange)(gc, 0, 0, gc->vertexArray.lockCount);
                 gc->vertexArray.flags &= ~2;
             }
-            (*gc->procs.drawIndexedTriangles)(gc, indices, vc, count - 2);
+            /* fix: software triangles (stencil in 16 bpp, stipple, ...) need the render buffers locked, as the generic
+            ** glDrawElements does; the original drew them unlocked here: a NULL depth buffer in the software depth
+            ** test (Neverwinter Nights' stencil shadows) */
+            {
+                GLuint lockPrim = gc->vertexArray.lockPrimMask & (1 << GL_TRIANGLES);
+
+                if (lockPrim && ++gc->buffers.lockCnt == 1 && gc->buffers.lockRenderBuffers)
+                    (*gc->buffers.lockRenderBuffers)(gc);
+                (*gc->procs.drawIndexedTriangles)(gc, indices, vc, count - 2);
+                if (lockPrim && --gc->buffers.lockCnt == 0 && gc->buffers.unlockRenderBuffers)
+                    (*gc->buffers.unlockRenderBuffers)(gc);
+            }
             return;
         }
         dst = &gc->hwcx.raw_38208[1];

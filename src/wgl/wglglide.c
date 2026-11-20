@@ -242,6 +242,11 @@ done:
     return result;
 }
 
+/* the depth (aux) buffer's place in the LFB, kept from its last lock (lfbAuxProbe / lfbDepthLock) */
+static void *s_auxBase;
+static GLint s_auxStride;
+static GLboolean s_auxLockHeld;
+
 /* 690150e3 -- open the Glide screen on the window (parent window for child windows) */
 GLint __fastcall wglGlideWinOpen(__GLcontext *gc, GLint resolution)
 {
@@ -272,6 +277,7 @@ GLint __fastcall wglGlideWinOpen(__GLcontext *gc, GLint resolution)
         ctx = grSstWinOpen((FxU32)hwnd, resolution, GR_REFRESH_60Hz, GR_COLORFORMAT_ARGB /*0*/, GR_ORIGIN_UPPER_LEFT /*0*/, 2, 1);
     }
     ICD_T("wglGlideWinOpen grSstWinOpen ctx (0 = failed)", ctx);
+    s_auxBase = NULL;                   /* a new screen: the depth buffer's LFB address is looked up again */
     if (ctx == 0) return -1;
     wglDisplayNotifyOpen();
     return ctx;
@@ -511,17 +517,40 @@ static GLubyte __fastcall lfbResize(__WGLbuffer *buf, GLint x, GLint y, GLuint w
 /* 690152f0 -- lfbLock: grLfbLock the buffer (front if it is dp->frontBuffer, else back), read-only if readlock and
 ** write-only if writelock, and point base / byteWidth / outerWidth at the LFB (the last lock's info); a failed
 ** lock returns with the buffer unchanged */
+/* Glide gives out one read lock and one write lock at a time, whatever the buffer.  Software drawing wants three:
+** the colour buffer for reading and writing and the depth buffer for reading, so one of them always failed and its
+** base stayed NULL (Neverwinter Nights' stencil shadows in 16 bpp: a crash in the software depth test).  The
+** buffers are fixed places in the linear frame buffer, so the depth buffer's address is taken once with a short
+** lock (lfbAuxProbe) and used when its own lock is refused, and the colour buffer goes on with its write lock
+** alone when the read lock is taken */
+static void lfbAuxProbe(void)
+{
+    GrLfbInfo_t info;
+
+    info.size = sizeof(info);
+    if (grLfbLock(GR_LFB_READ_ONLY, GR_BUFFER_AUXBUFFER, GR_LFBWRITEMODE_ANY, GR_ORIGIN_UPPER_LEFT, FXFALSE, &info)) {
+        s_auxBase = info.lfbPtr;
+        s_auxStride = info.strideInBytes;
+        grLfbUnlock(GR_LFB_READ_ONLY, GR_BUFFER_AUXBUFFER);
+    }
+}
+
 static void __fastcall lfbLock(__WGLbuffer *buf, __WGLdrawable *dp)                         /* 690152f0 */
 {
     GrLfbInfo_t info;
     GrBuffer_t which = (&dp->frontBuffer != buf);          /* front = 0, back = 1 */
+    GLboolean gotRead = GL_FALSE;
     if (!buf->readlock && !buf->writelock) return;         /* fix: with neither lock the original used an unset info */
+    if (s_auxBase == NULL) lfbAuxProbe();                  /* before this buffer takes the read lock */
     info.size = sizeof(info);
-    if (buf->readlock && !grLfbLock(GR_LFB_READ_ONLY, which, GR_LFBWRITEMODE_ANY, GR_ORIGIN_UPPER_LEFT, FXFALSE, &info)) return;
-    ICD_LFB(buf->readlock ? 1 : 0);
+    if (buf->readlock) {
+        gotRead = (GLboolean)(grLfbLock(GR_LFB_READ_ONLY, which, GR_LFBWRITEMODE_ANY, GR_ORIGIN_UPPER_LEFT, FXFALSE, &info) != 0);
+        if (!gotRead && !buf->writelock) return;           /* (the read lock is the depth buffer's: write lock alone) */
+    }
+    ICD_LFB(gotRead ? 1 : 0);
     info.size = sizeof(info);
     if (buf->writelock && !grLfbLock(GR_LFB_WRITE_ONLY, which, GR_LFBWRITEMODE_ANY, GR_ORIGIN_UPPER_LEFT, FXFALSE, &info)) {
-        if (buf->readlock) {                               /* fix: the original kept the read lock */
+        if (gotRead) {                                     /* fix: the original kept the read lock */
             grLfbUnlock(GR_LFB_READ_ONLY, which);
             ICD_LFB(-1);
         }
@@ -537,9 +566,9 @@ static void __fastcall lfbLock(__WGLbuffer *buf, __WGLdrawable *dp)             
 static void __fastcall lfbUnlock(__WGLbuffer *buf, __WGLdrawable *dp)                       /* 69015380 */
 {
     GrBuffer_t which = (&dp->frontBuffer != buf);
-    if (buf->readlock) grLfbUnlock(GR_LFB_READ_ONLY, which);
-    if (buf->writelock) grLfbUnlock(GR_LFB_WRITE_ONLY, which);
-    ICD_LFB(-((buf->readlock ? 1 : 0) + (buf->writelock ? 1 : 0)));
+    /* (Glide refuses the unlock of a lock this buffer did not get: see lfbLock) */
+    if (buf->readlock && grLfbUnlock(GR_LFB_READ_ONLY, which)) { ICD_LFB(-1); }
+    if (buf->writelock && grLfbUnlock(GR_LFB_WRITE_ONLY, which)) { ICD_LFB(-1); }
     buf->base = NULL;
     buf->byteWidth = 0;
 }
@@ -575,9 +604,18 @@ static void __fastcall lfbDepthLock(__WGLbuffer *buf, __WGLdrawable *dp)        
     info.size = sizeof(info);
     if (grLfbLock(GR_LFB_READ_ONLY, GR_BUFFER_AUXBUFFER, GR_LFBWRITEMODE_ANY, GR_ORIGIN_UPPER_LEFT, FXFALSE, &info)) {
         ICD_LFB(1);
+        s_auxLockHeld = GL_TRUE;
+        s_auxBase = info.lfbPtr;
+        s_auxStride = info.strideInBytes;
         buf->base = info.lfbPtr;
         buf->byteWidth = info.strideInBytes;
         buf->outerWidth = info.strideInBytes / buf->elementSize;
+    } else if (s_auxBase != NULL) {     /* the read lock is taken (the colour buffer's): the address from before */
+        buf->base = s_auxBase;
+        buf->byteWidth = s_auxStride;
+        buf->outerWidth = s_auxStride / buf->elementSize;
+    } else {
+        ICD_T("lfbDepthLock: no lock and no known address", 0);
     }
 }
 /* 690154f0 -- lfbDepthUnlock: grLfbUnlock the aux (depth) buffer and restore base from the private's savedBase */
@@ -585,8 +623,11 @@ static void __fastcall lfbDepthUnlock(__WGLbuffer *buf, __WGLdrawable *dp)      
 {
     LfbPriv *pv = (LfbPriv *)buf->private_;
     (void)dp;
-    grLfbUnlock(GR_LFB_READ_ONLY, GR_BUFFER_AUXBUFFER);
-    ICD_LFB(-1);
+    if (s_auxLockHeld) {
+        grLfbUnlock(GR_LFB_READ_ONLY, GR_BUFFER_AUXBUFFER);
+        ICD_LFB(-1);
+        s_auxLockHeld = GL_FALSE;
+    }
     buf->base = pv->savedBase;
 }
 /* 69015510 -- lfbDepthFree: free the private and clear buf->free */
