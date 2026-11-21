@@ -453,6 +453,57 @@ void __stdcall __glim_TexGeniv(GLenum coord, GLenum pname, const GLint pv[])
     TEXGEN_BODY()
 }
 
+/* ---- OpenGL 1.2 texture level range (FX_GL_VERSION 1.2; not in the original) ---- */
+#define GL_TEXTURE_MIN_LOD_12       0x813A
+#define GL_TEXTURE_MAX_LOD_12       0x813B
+#define GL_TEXTURE_BASE_LEVEL_12    0x813C
+#define GL_TEXTURE_MAX_LEVEL_12     0x813D
+
+/* __glTexLevelRange: the levels of tex that are used, GL_TEXTURE_BASE_LEVEL .. GL_TEXTURE_MAX_LEVEL clamped to
+** 0 .. top (the last level the image can have) */
+void __fastcall __glTexLevelRange(const __GLtextureICD *tex, GLint top, GLint *base, GLint *last)
+{
+    GLint b = tex->baseLevel, l = tex->lastLevel;
+
+    if (b > top) b = top;
+    if (l > top) l = top;
+    if (l < b) l = b;
+    *base = b;
+    *last = l;
+}
+
+/* __glTexLevelParam: glTexParameter of the 1.2 level parameters.  0: pname is not one of them (or 1.1 is
+** selected); 1: taken; 2: taken and the level range changed.  BASE_LEVEL / MAX_LEVEL are kept in the object;
+** MIN_LOD / MAX_LOD are accepted and not used (the TMU's LOD range is the level range) */
+GLint __fastcall __glTexLevelParam(__GLcontext *gc, __GLtextureICD *tex, GLenum pname, __GLfloat v)
+{
+    GLint n;
+
+    if (g_glVersion < 12)
+        return 0;
+    switch (pname) {
+      case GL_TEXTURE_MIN_LOD_12:
+      case GL_TEXTURE_MAX_LOD_12:
+        return 1;
+      case GL_TEXTURE_BASE_LEVEL_12:
+      case GL_TEXTURE_MAX_LEVEL_12:
+        if (v < 0.0f) {
+            __glSetError(GL_INVALID_VALUE);
+            return 1;
+        }
+        n = v > 1000.0f ? 1000 : (GLint)v;
+        if (pname == GL_TEXTURE_BASE_LEVEL_12) {
+            if (tex->baseLevel == n) return 1;
+            tex->baseLevel = (GLshort)n;
+        } else {
+            if (tex->lastLevel == n) return 1;
+            tex->lastLevel = (GLshort)n;
+        }
+        return 2;
+    }
+    return 0;
+}
+
 /* 6909d160 -- __glim_TexParameterfv: each parameter goes into the state's per-target copy and the
 ** bound object */
 void __stdcall __glim_TexParameterfv(GLenum target, GLenum pname, const GLfloat pv[])
@@ -463,11 +514,16 @@ void __stdcall __glim_TexParameterfv(GLenum target, GLenum pname, const GLfloat 
     __GLtexNamePriICD *texName;
     __GL_SETUP_NOT_IN_BEGIN();
 
+    if (__glTex3DTarget(target)) return;                 /* OpenGL 1.2 GL_TEXTURE_3D: accepted, not kept */
     params = __glLookUpActiveTextureParams(gc, target);
     if (!params) goto bad_enum;
     tex = __glLookupActiveTexture(gc, target);
     if (tex->refCount > 2) {
         __glSetError(GL_INVALID_OPERATION);
+        return;
+    }
+    if (__glTexLevelParam(gc, tex, pname, pv[0])) {
+        __GL_DELAY_VALIDATE(gc);
         return;
     }
 
@@ -557,11 +613,16 @@ void __stdcall __glim_TexParameteriv(GLenum target, GLenum pname, const GLint pv
     __GLfloat priority;
     __GL_SETUP_NOT_IN_BEGIN();
 
+    if (__glTex3DTarget(target)) return;                 /* OpenGL 1.2 GL_TEXTURE_3D: accepted, not kept */
     params = __glLookUpActiveTextureParams(gc, target);
     tex = __glLookupActiveTexture(gc, target);
     if (!params) goto bad_enum;
     if (tex->refCount > 2) {
         __glSetError(GL_INVALID_OPERATION);
+        return;
+    }
+    if (__glTexLevelParam(gc, tex, pname, (__GLfloat)pv[0])) {
+        __GL_DELAY_VALIDATE(gc);
         return;
     }
 
@@ -889,7 +950,7 @@ __GLtextureICD * __fastcall CheckCopyTexImageArgs(__GLcontext *gc, GLenum target
 }
 
 /* 6909eaf0 -- s_tex.c __glim_TexImage1D */
-void __stdcall __glim_TexImage1D(GLenum target, GLint lod, GLint components, GLsizei length,
+static void __stdcall __glim_TexImage1D_base(GLenum target, GLint lod, GLint components, GLsizei length,
                             GLint border, GLenum format, GLenum type, const GLvoid *buf)
 {
     __GLtextureICD *tex;
@@ -928,7 +989,7 @@ void __stdcall __glim_TexImage1D(GLenum target, GLint lod, GLint components, GLs
 }
 
 /* 6909ec90 -- s_tex.c __glim_TexImage2D */
-void __stdcall __glim_TexImage2D(GLenum target, GLint lod, GLint components, GLsizei w, GLsizei h,
+static void __stdcall __glim_TexImage2D_base(GLenum target, GLint lod, GLint components, GLsizei w, GLsizei h,
                             GLint border, GLenum format, GLenum type, const GLvoid *buf)
 {
     __GLtextureICD *tex;
@@ -1122,7 +1183,7 @@ __GLtextureICD * __fastcall CheckTexSubImageArgs(__GLcontext *gc, GLenum target,
 }
 
 /* 6909fb80 -- s_tex.c __glim_TexSubImage1D (no pixel-path width adjustment) */
-void __stdcall __glim_TexSubImage1D(GLenum target, GLint lod,
+static void __stdcall __glim_TexSubImage1D_base(GLenum target, GLint lod,
                              GLint xoffset, GLint length, GLenum format, GLenum type, const GLvoid *buf)
 {
     __GLtextureICD *tex;
@@ -1151,7 +1212,7 @@ void __stdcall __glim_TexSubImage1D(GLenum target, GLint lod,
 
 /* 6909fd00 -- s_tex.c __glim_TexSubImage2D; a level with a second image (+0x04) gets the
 ** rectangle through 690a0b90 too */
-void __stdcall __glim_TexSubImage2D(GLenum target, GLint lod,
+static void __stdcall __glim_TexSubImage2D_base(GLenum target, GLint lod,
                              GLint xoffset, GLint yoffset, GLsizei w, GLsizei h,
                              GLenum format, GLenum type, const GLvoid *buf)
 {
@@ -1195,6 +1256,7 @@ void __stdcall __glim_BindTexture(GLenum target, GLuint texture)
     GLuint targetIndex;
     __GL_SETUP_NOT_IN_BEGIN_VALIDATE();
 
+    if (__glTex3DBind(gc, target, texture)) return;     /* OpenGL 1.2 GL_TEXTURE_3D: accepted, not drawn */
     switch (target) {
     case GL_TEXTURE_1D:
         targetIndex = 0;
@@ -1826,6 +1888,7 @@ __GLtextureICD *__fastcall __glCreateTexture(__GLcontext *gc, GLuint name, GLint
     tex->params.tWrapMode = GL_REPEAT;
     tex->params.minFilter = GL_NEAREST_MIPMAP_LINEAR;
     tex->params.magFilter = GL_LINEAR;
+    tex->lastLevel = 1000;              /* GL_TEXTURE_MAX_LEVEL */
 
     switch (targetIndex) {
       case 0:
@@ -2217,12 +2280,17 @@ void __stdcall __glim_TexGeni(GLenum coord, GLenum pname, GLint param)
 /* 6909d3b0: __glim_TexParameterf */
 void __stdcall __glim_TexParameterf(GLenum target, GLenum pname, GLfloat param)
 {
+    if (__glTex3DTarget(target)) { return; }             /* OpenGL 1.2 GL_TEXTURE_3D (GL_TEXTURE_WRAP_R too) */
     switch (pname) {
       case GL_TEXTURE_MAG_FILTER:
       case GL_TEXTURE_MIN_FILTER:
       case GL_TEXTURE_WRAP_S:
       case GL_TEXTURE_WRAP_T:
       case GL_TEXTURE_PRIORITY:
+      case GL_TEXTURE_MIN_LOD_12:
+      case GL_TEXTURE_MAX_LOD_12:
+      case GL_TEXTURE_BASE_LEVEL_12:
+      case GL_TEXTURE_MAX_LEVEL_12:           /* (refused below when 1.1 is selected) */
         __glim_TexParameterfv(target, pname, &param);
         return;
       default:
@@ -2234,12 +2302,17 @@ void __stdcall __glim_TexParameterf(GLenum target, GLenum pname, GLfloat param)
 /* 6909d600: __glim_TexParameteri */
 void __stdcall __glim_TexParameteri(GLenum target, GLenum pname, GLint param)
 {
+    if (__glTex3DTarget(target)) { return; }             /* OpenGL 1.2 GL_TEXTURE_3D (GL_TEXTURE_WRAP_R too) */
     switch (pname) {
       case GL_TEXTURE_MAG_FILTER:
       case GL_TEXTURE_MIN_FILTER:
       case GL_TEXTURE_WRAP_S:
       case GL_TEXTURE_WRAP_T:
       case GL_TEXTURE_PRIORITY:
+      case GL_TEXTURE_MIN_LOD_12:
+      case GL_TEXTURE_MAX_LOD_12:
+      case GL_TEXTURE_BASE_LEVEL_12:
+      case GL_TEXTURE_MAX_LEVEL_12:           /* (refused below when 1.1 is selected) */
         __glim_TexParameteriv(target, pname, &param);
         return;
       default:
@@ -2606,16 +2679,24 @@ GLboolean __fastcall __glIsTextureConsistent(__GLcontext *gc, __GLtextureICD *te
     GLint requestedFormat;
     GLboolean rgb;
 
+    GLint base, last;
+
     if ((tex->level[0]->width == 0) ||
         (tex->level[0]->height == 0) ||
         (tex->level[0]->depth == 0)) {
         return GL_FALSE;
     }
+    /* OpenGL 1.2: the chain is tested from GL_TEXTURE_BASE_LEVEL to GL_TEXTURE_MAX_LEVEL (0 .. 1000 by default:
+    ** as before).  Level 0 must still be there: the hardware path takes the format and aspect from it */
+    __glTexLevelRange(tex, gc->constants.maxMipMapLevel - 1, &base, &last);
+    if (tex->level[base]->width == 0 || tex->level[base]->height == 0) {
+        return GL_FALSE;
+    }
 
-    border   = tex->level[0]->border;
-    width    = tex->level[0]->width - border*2;
-    height   = tex->level[0]->height - border*2;
-    depth    = tex->level[0]->depth - border*2;
+    border   = tex->level[base]->border;
+    width    = tex->level[base]->width - border*2;
+    height   = tex->level[base]->height - border*2;
+    depth    = tex->level[base]->depth - border*2;
     maxLevel = gc->constants.maxMipMapLevel;
     rgb = gc->modes.rgbMode;
 
@@ -2661,8 +2742,8 @@ GLboolean __fastcall __glIsTextureConsistent(__GLcontext *gc, __GLtextureICD *te
         break;
     }
 
-    i = 0;
-    while (++i < maxLevel) {
+    i = base;
+    while (++i < maxLevel && i <= last) {
         if (width == 1 && height == 1) break;
         width >>= 1;
         if (width == 0) width = 1;
@@ -3085,4 +3166,176 @@ const void * __fastcall __glLookupTextureFormat(GLuint ecx_, const GLenum compon
     default:
         return 0;
     }
+}
+
+/* glTexImage / glTexSubImage with an OpenGL 1.2 packed type: the image is rewritten as GL_UNSIGNED_BYTE first
+** (si_px_api.c __glPacked12*); every other type goes on unchanged */
+#define PACKED12_TEX(w, h, call_same, call_bytes, call_tmp)                                 \
+    __GLcontext *gc = __glCurrentGC();                                                      \
+    __GLpixelPackMode saved;                                                                \
+    GLubyte *tmp;                                                                           \
+    if (!__glPacked12Type(type, NULL)) { call_same; return; }                               \
+    if (!__glPacked12FormatOK(format, type)) return;                                        \
+    if (buf == NULL || (w) <= 0 || (h) <= 0) { call_bytes; return; }                        \
+    tmp = __glPacked12Unpack(gc, (w), (h), type, buf, &saved);                              \
+    if (tmp == NULL) return;                                                                \
+    call_tmp;                                                                               \
+    __glPacked12Done(gc, tmp, &saved);
+
+void __stdcall __glim_TexImage1D(GLenum target, GLint lod, GLint components, GLsizei length, GLint border, GLenum format,
+                              GLenum type, const GLvoid *buf)
+{
+    PACKED12_TEX(length, 1,
+                 __glim_TexImage1D_base(target, lod, components, length, border, format, type, buf),
+                 __glim_TexImage1D_base(target, lod, components, length, border, format, GL_UNSIGNED_BYTE, buf),
+                 __glim_TexImage1D_base(target, lod, components, length, border, format, GL_UNSIGNED_BYTE, tmp))
+}
+
+void __stdcall __glim_TexImage2D(GLenum target, GLint lod, GLint components, GLsizei w, GLsizei h, GLint border,
+                              GLenum format, GLenum type, const GLvoid *buf)
+{
+    PACKED12_TEX(w, h,
+                 __glim_TexImage2D_base(target, lod, components, w, h, border, format, type, buf),
+                 __glim_TexImage2D_base(target, lod, components, w, h, border, format, GL_UNSIGNED_BYTE, buf),
+                 __glim_TexImage2D_base(target, lod, components, w, h, border, format, GL_UNSIGNED_BYTE, tmp))
+}
+
+void __stdcall __glim_TexSubImage1D(GLenum target, GLint lod, GLint xoffset, GLint length, GLenum format, GLenum type,
+                                 const GLvoid *buf)
+{
+    PACKED12_TEX(length, 1,
+                 __glim_TexSubImage1D_base(target, lod, xoffset, length, format, type, buf),
+                 __glim_TexSubImage1D_base(target, lod, xoffset, length, format, GL_UNSIGNED_BYTE, buf),
+                 __glim_TexSubImage1D_base(target, lod, xoffset, length, format, GL_UNSIGNED_BYTE, tmp))
+}
+
+void __stdcall __glim_TexSubImage2D(GLenum target, GLint lod, GLint xoffset, GLint yoffset, GLsizei w, GLsizei h,
+                                 GLenum format, GLenum type, const GLvoid *buf)
+{
+    PACKED12_TEX(w, h,
+                 __glim_TexSubImage2D_base(target, lod, xoffset, yoffset, w, h, format, type, buf),
+                 __glim_TexSubImage2D_base(target, lod, xoffset, yoffset, w, h, format, GL_UNSIGNED_BYTE, buf),
+                 __glim_TexSubImage2D_base(target, lod, xoffset, yoffset, w, h, format, GL_UNSIGNED_BYTE, tmp))
+}
+#undef PACKED12_TEX
+
+/* ---- OpenGL 1.2 3D textures (FX_GL_VERSION 1.2; not in the original) ---------------------------------------------
+** The hardware has none and the software rasteriser was built without them, so they are accepted and not drawn:
+** the calls succeed, the sizes can be asked back, nothing is stored and GL_TEXTURE_3D has no effect on drawing.
+** GL_MAX_3D_TEXTURE_SIZE is 16, the smallest the specification allows, and a proxy larger than that reports
+** failure, so a game that asks first finds them too small to use.  One set of sizes for the whole process. */
+#define TEX3D_MAX       16
+#define TEX3D_LEVELS    5
+static struct { GLint w, h, d, border; GLenum ifmt; } s_tex3d[TEX3D_LEVELS], s_tex3dProxy[TEX3D_LEVELS];
+static GLuint s_tex3dBinding[__GL_NUM_TEXTURE_UNITS];
+
+GLboolean __fastcall __glTex3DTarget(GLenum target)
+{
+    return (GLboolean)(g_glVersion >= 12 && (target == 0x806F /* GL_TEXTURE_3D */ || target == 0x8070 /* proxy */));
+}
+
+/* glBindTexture(GL_TEXTURE_3D): the name is remembered for glGet */
+GLboolean __fastcall __glTex3DBind(__GLcontext *gc, GLenum target, GLuint texture)
+{
+    if (g_glVersion < 12 || target != 0x806F)
+        return GL_FALSE;
+    s_tex3dBinding[gc->fx.activeTexture] = texture;
+    return GL_TRUE;
+}
+
+GLuint __fastcall __glTex3DBinding(__GLcontext *gc)
+{
+    return s_tex3dBinding[gc->fx.activeTexture];
+}
+
+static GLboolean tex3dSizeOK(GLint v, GLint border)
+{
+    v -= 2 * border;
+    return (GLboolean)(v >= 1 && v <= TEX3D_MAX && (v & (v - 1)) == 0);
+}
+
+void APIENTRY __glim_TexImage3D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height,
+                                GLsizei depth, GLint border, GLenum format, GLenum type, const GLvoid *pixels)
+{
+    GLboolean ok;
+
+    (void)format; (void)type; (void)pixels;
+    if (!__glTex3DTarget(target)) {
+        __glSetError(GL_INVALID_ENUM);
+        return;
+    }
+    ok = (GLboolean)(level >= 0 && level < TEX3D_LEVELS && (border == 0 || border == 1) &&
+                     tex3dSizeOK(width, border) && tex3dSizeOK(height, border) && tex3dSizeOK(depth, border));
+    if (target == 0x8070) {                             /* the proxy: zero sizes say "cannot" */
+        if (level >= 0 && level < TEX3D_LEVELS) {
+            s_tex3dProxy[level].w = ok ? width : 0;
+            s_tex3dProxy[level].h = ok ? height : 0;
+            s_tex3dProxy[level].d = ok ? depth : 0;
+            s_tex3dProxy[level].border = ok ? border : 0;
+            s_tex3dProxy[level].ifmt = ok ? (GLenum)internalformat : 0;
+        }
+        return;
+    }
+    if (!ok) {
+        __glSetError(GL_INVALID_VALUE);
+        return;
+    }
+    s_tex3d[level].w = width;
+    s_tex3d[level].h = height;
+    s_tex3d[level].d = depth;
+    s_tex3d[level].border = border;
+    s_tex3d[level].ifmt = (GLenum)internalformat;
+}
+
+void APIENTRY __glim_TexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset,
+                                   GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type,
+                                   const GLvoid *pixels)
+{
+    (void)xoffset; (void)yoffset; (void)zoffset; (void)width; (void)height; (void)depth;
+    (void)format; (void)type; (void)pixels;
+    if (g_glVersion < 12 || target != 0x806F) {
+        __glSetError(GL_INVALID_ENUM);
+        return;
+    }
+    if (level < 0 || level >= TEX3D_LEVELS || s_tex3d[level].w == 0)
+        __glSetError(GL_INVALID_OPERATION);
+}
+
+void APIENTRY __glim_CopyTexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset,
+                                       GLint x, GLint y, GLsizei width, GLsizei height)
+{
+    (void)xoffset; (void)yoffset; (void)zoffset; (void)x; (void)y; (void)width; (void)height;
+    if (g_glVersion < 12 || target != 0x806F) {
+        __glSetError(GL_INVALID_ENUM);
+        return;
+    }
+    if (level < 0 || level >= TEX3D_LEVELS || s_tex3d[level].w == 0)
+        __glSetError(GL_INVALID_OPERATION);
+}
+
+/* glGetTexLevelParameter of the 3D targets: GL_TRUE when target is one of them (*out set, 0 for what is not kept) */
+GLboolean __fastcall __glTex3DLevelParam(GLenum target, GLint level, GLenum pname, GLint *out)
+{
+    GLint w, h, d, b;
+    GLenum f;
+
+    if (!__glTex3DTarget(target))
+        return GL_FALSE;
+    *out = 0;
+    if (level < 0 || level >= TEX3D_LEVELS)
+        return GL_TRUE;
+    if (target == 0x806F) {
+        w = s_tex3d[level].w; h = s_tex3d[level].h; d = s_tex3d[level].d; b = s_tex3d[level].border; f = s_tex3d[level].ifmt;
+    } else {
+        w = s_tex3dProxy[level].w; h = s_tex3dProxy[level].h; d = s_tex3dProxy[level].d;
+        b = s_tex3dProxy[level].border; f = s_tex3dProxy[level].ifmt;
+    }
+    switch (pname) {
+      case GL_TEXTURE_WIDTH:            *out = w; break;
+      case GL_TEXTURE_HEIGHT:           *out = h; break;
+      case 0x8071:                      *out = d; break;        /* GL_TEXTURE_DEPTH */
+      case GL_TEXTURE_BORDER:           *out = b; break;
+      case GL_TEXTURE_INTERNAL_FORMAT:  *out = (GLint)f; break;
+    }
+    return GL_TRUE;
 }

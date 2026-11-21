@@ -655,6 +655,14 @@ void __fastcall __glDoGet(GLenum sq, void *result, GLint type, const char *procN
 	*fp++ = gc->constants.pointSizeMinimum;
 	*fp++ = gc->constants.pointSizeMaximum;
 	break;
+      case 0x846D:				/* GL_ALIASED_POINT_SIZE_RANGE (OpenGL 1.2): the same limits */
+	*fp++ = 1.0f;
+	*fp++ = gc->constants.pointSizeMaximum;
+	break;
+      case 0x846E:				/* GL_ALIASED_LINE_WIDTH_RANGE */
+	*fp++ = 1.0f;
+	*fp++ = gc->constants.lineWidthMaximum;
+	break;
       case GL_POINT_SIZE_GRANULARITY:
       /* case GL_SMOOTH_POINT_SIZE_GRANULARITY: */ /* Alias for POINT_SIZE_GRANULARITY */
 	*fp++ = gc->constants.pointSizeGranularity;
@@ -696,6 +704,13 @@ void __fastcall __glDoGet(GLenum sq, void *result, GLint type, const char *procN
 	break;
       case GL_LIGHT_MODEL_TWO_SIDE:
 	*lp++ = gc->state.light.model.twoSided;
+	break;
+      case 0x81F8:				/* GL_LIGHT_MODEL_COLOR_CONTROL (OpenGL 1.2) */
+	if (g_glVersion < 12) {
+	    __glSetError(GL_INVALID_ENUM);
+	    return;
+	}
+	*ip++ = gc->state.light.model.separateSpecular ? 0x81FA : 0x81F9;
 	break;
       case GL_LIGHT_MODEL_AMBIENT:
 	__glUnScaleColorf(gc, cp, &gc->state.light.model.ambient);
@@ -1245,6 +1260,8 @@ void __fastcall __glDoGet(GLenum sq, void *result, GLint type, const char *procN
       case GL_TEXTURE_1D:
       case GL_TEXTURE_2D:
       case GL_AUTO_NORMAL:
+      case 0x803A:				/* GL_RESCALE_NORMAL (OpenGL 1.2; glIsEnabled refuses it under 1.1) */
+      case 0x806F:				/* GL_TEXTURE_3D (OpenGL 1.2) */
       case GL_TEXTURE_GEN_S:
       case GL_TEXTURE_GEN_T:
       case GL_TEXTURE_GEN_R:
@@ -1320,6 +1337,22 @@ void __fastcall __glDoGet(GLenum sq, void *result, GLint type, const char *procN
 	break;
       case GL_MAX_TEXTURE_UNITS_ARB:
 	*ip++ = gc->constants.maxTextureUnits;
+	break;
+      case 0x8073:				/* GL_MAX_3D_TEXTURE_SIZE (OpenGL 1.2): the specification's minimum */
+	*ip++ = g_glVersion >= 12 ? 16 : 0;
+	break;
+      case 0x806A:				/* GL_TEXTURE_BINDING_3D */
+	*ip++ = __glTex3DBinding(gc);
+	break;
+      case 0x806B: case 0x806C:			/* GL_PACK_SKIP_IMAGES, GL_PACK_IMAGE_HEIGHT: accepted, not kept */
+      case 0x806D: case 0x806E:			/* GL_UNPACK_SKIP_IMAGES, GL_UNPACK_IMAGE_HEIGHT */
+	*ip++ = 0;
+	break;
+      case 0x80E8:				/* GL_MAX_ELEMENTS_VERTICES (OpenGL 1.2): hints for glDrawRangeElements */
+	*ip++ = 4096;
+	break;
+      case 0x80E9:				/* GL_MAX_ELEMENTS_INDICES */
+	*ip++ = 12288;
 	break;
       default:
 	__glSetError(GL_INVALID_ENUM);

@@ -429,6 +429,24 @@ BOOL  WINAPI wglSASwapLayerBuffers(HDC hdc, UINT planes)                        
 
 /* the wglGetProcAddress table (690ee000: {name, fn} x 0x72, glstubs.c) */
 extern struct { const char *name; PROC fn; } g_extProcTable[0x72];   /* 690ee000 .. 690ee390 */
+/* entry points added after the original's table, each with the OpenGL version (g_glVersion) that offers it */
+extern GLint g_glVersion;
+void APIENTRY __glim_DrawRangeElements(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type,
+                                       const GLvoid *indices);
+void APIENTRY __glim_TexImage3D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height,
+                                GLsizei depth, GLint border, GLenum format, GLenum type, const GLvoid *pixels);
+void APIENTRY __glim_TexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset,
+                                   GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type,
+                                   const GLvoid *pixels);
+void APIENTRY __glim_CopyTexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset,
+                                       GLint x, GLint y, GLsizei width, GLsizei height);
+static const struct { const char *name; PROC fn; GLint version; } s_newerProcs[] = {
+    { "glDrawRangeElements",    (PROC)__glim_DrawRangeElements, 12 },
+    { "glDrawRangeElementsEXT", (PROC)__glim_DrawRangeElements, 12 },
+    { "glTexImage3D",           (PROC)__glim_TexImage3D, 12 },          /* accepted, not drawn (gl_tex.c) */
+    { "glTexSubImage3D",        (PROC)__glim_TexSubImage3D, 12 },
+    { "glCopyTexSubImage3D",    (PROC)__glim_CopyTexSubImage3D, 12 },
+};
 /* 69009882 -- wglGetProcAddressTable: look name up (exact, case-sensitive) in g_extProcTable and return its
 ** function, NULL when it is not there; with no current context (the null gc) NULL and ERROR_INVALID_HANDLE */
 void *__fastcall wglGetProcAddressTable(const char *name)
@@ -443,6 +461,10 @@ void *__fastcall wglGetProcAddressTable(const char *name)
         while (*a == *b && *a != '\0') { a++; b++; }   /* inline strcmp */
         if (*a == *b && *a == '\0') return (void *)g_extProcTable[i].fn;
     }
+    /* the entry points of the newer OpenGL versions, when FX_GL_VERSION offers them */
+    for (i = 0; i < sizeof(s_newerProcs) / sizeof(s_newerProcs[0]); i++)
+        if (g_glVersion >= s_newerProcs[i].version && strcmp(name, s_newerProcs[i].name) == 0)
+            return (void *)s_newerProcs[i].fn;
     return NULL;
 }
 

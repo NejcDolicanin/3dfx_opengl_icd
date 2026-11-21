@@ -142,7 +142,9 @@ typedef struct __GLlightModelStateRec {     /* 0x370 */
     __GLcolor   ambient;                    /* 0x370 */
     GLboolean   localViewer;                /* 0x380 */
     GLboolean   twoSided;                   /* 0x381 */
-    GLubyte     pad382[2];
+    GLboolean   separateSpecular;           /* 0x382  OpenGL 1.2 GL_LIGHT_MODEL_COLOR_CONTROL is GL_SEPARATE_SPECULAR_COLOR
+                                                 (kept for glGet; drawn as GL_SINGLE_COLOR: the original: padding) */
+    GLubyte     pad383;
 } __GLlightModelState;
 
 typedef struct __GLmaterialStateRec {       /* 0x58 bytes (SI has 0x50) */
@@ -943,7 +945,9 @@ typedef struct __GLtextureICDRec {          /* 0xd4 (SI __GLtexture order; the s
     __GLproc    linear;                     /* +0xb4  (tex, level, s, t, texel): the level filters */
     __GLproc    nearest;                    /* +0xb8 */
     const struct __GLtextureFormatICDRec *texFormat;   /* +0xbc  the device format (g_device->chooseTexFormat) */
-    GLuint      unk_c0;                     /* +0xc0 */
+    GLshort     baseLevel;                  /* +0xc0  OpenGL 1.2 GL_TEXTURE_BASE_LEVEL (the original: an unused dword) */
+    GLshort     lastLevel;                  /* +0xc2  GL_TEXTURE_MAX_LEVEL, 1000 at create (maxLevel above is the
+                                                 level count of the image) */
     GLint       targetIndex;                /* +0xc4  0..3 (createTexture's third argument) */
     GLuint      makeResidentArg;            /* +0xc8  makeResident's third argument: nothing sets it (0 from the
                                                  calloc) and every makeResident ignores it */

@@ -34,7 +34,7 @@
 #define __GL_LINE_ENABLES_ICD           0x00000300
 #define __GL_POLYGON_ENABLES_ICD        0x001c3800
 #define __GL_AUTO_NORMAL_ENABLE_ICD     0x00020000
-#define __GL_NORMALIZE_ENABLE_ICD       0x00010000
+#define __GL_NORMALIZE_ENABLE_ICD       0x0c010000      /* with the 1.2 rescale-normal bits (glsi.h) */
 
 /************************************************************************/
 
@@ -750,6 +750,21 @@ void __fastcall DrawVerticesPolygon(__GLcontext *gc, GLint first, GLsizei count,
     }
 }
 
+/* glDrawRangeElements (OpenGL 1.2, EXT_draw_range_elements; not in the original): glDrawElements through the
+** current dispatch table (immediate or display-list compile).  start / end are a hint the driver has no use for;
+** end < start is an error */
+void APIENTRY __glim_DrawRangeElements(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type,
+                                       const GLvoid *indices)
+{
+    typedef void (APIENTRY *DrawElementsProc)(GLenum, GLsizei, GLenum, const GLvoid *);
+
+    if (end < start) {
+        __glSetError(GL_INVALID_VALUE);
+        return;
+    }
+    (*(DrawElementsProc)__glCurrentGC()->currentDispatchState.fn[__GL_DISP_DrawElements])(mode, count, type, indices);
+}
+
 /* 690b0dc0 (size 511) -- __glim_DrawElements: glDrawElements */
 void __stdcall __glim_DrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indices)
 {
@@ -1325,6 +1340,19 @@ void __stdcall __glim_Lightiv(GLenum light, GLenum p, const GLint pv[])
 /************************************************************************/
 /* s_light.c */
 
+/* OpenGL 1.2 GL_LIGHT_MODEL_COLOR_CONTROL (FX_GL_VERSION 1.2; 3dfx had taken it out of the SI).  The value is kept
+** for glGet and the attribute stack.  GL_SEPARATE_SPECULAR_COLOR is not drawn: the chip cannot add a second colour
+** after texturing, so the specular term stays in the one colour, as with GL_SINGLE_COLOR.  GL_FALSE: error set */
+static GLboolean __glLightModelColorControl(__GLlightModelState *model, GLenum value)
+{
+    if (g_glVersion < 12 || (value != 0x81F9 /* GL_SINGLE_COLOR */ && value != 0x81FA /* GL_SEPARATE_SPECULAR_COLOR */)) {
+        __glSetError(GL_INVALID_ENUM);
+        return GL_FALSE;
+    }
+    model->separateSpecular = (GLboolean)(value == 0x81FA);
+    return GL_TRUE;
+}
+
 /* 690b5fe0 -- __glim_LightModelfv: glLightModelfv (two-side also flags the Glide path) */
 void __stdcall __glim_LightModelfv(GLenum pname, const GLfloat *params)
 {
@@ -1342,6 +1370,9 @@ void __stdcall __glim_LightModelfv(GLenum pname, const GLfloat *params)
       case GL_LIGHT_MODEL_TWO_SIDE:
 	model->twoSided = params[0] != __GL_ZERO_F;
 	gc->fx.flags |= 1;
+	break;
+      case 0x81F8:		/* GL_LIGHT_MODEL_COLOR_CONTROL (OpenGL 1.2): see __glLightModelColorControl */
+	if (!__glLightModelColorControl(model, (GLenum)params[0])) return;
 	break;
       default:
 	__glSetError(GL_INVALID_ENUM);
@@ -1372,6 +1403,9 @@ void __stdcall __glim_LightModeliv(GLenum p, const GLint pv[])
       case GL_LIGHT_MODEL_TWO_SIDE:
 	model->twoSided = pv[0] != 0;
 	gc->fx.flags |= 1;
+	break;
+      case 0x81F8:		/* GL_LIGHT_MODEL_COLOR_CONTROL (OpenGL 1.2) */
+	if (!__glLightModelColorControl(model, (GLenum)pv[0])) return;
 	break;
       default:
 	__glSetError(GL_INVALID_ENUM);
@@ -2082,7 +2116,7 @@ void __stdcall __glim_Lighti(GLenum light, GLenum p, GLint i)
 /* 690b60d0: __glim_LightModelf */
 void __stdcall __glim_LightModelf(GLenum p, GLfloat f)
 {
-    if (p >= GL_LIGHT_MODEL_LOCAL_VIEWER && p <= GL_LIGHT_MODEL_TWO_SIDE) {
+    if ((p >= GL_LIGHT_MODEL_LOCAL_VIEWER && p <= GL_LIGHT_MODEL_TWO_SIDE) || p == 0x81F8) {
         __glim_LightModelfv(p, &f);
         return;
     }
@@ -2092,7 +2126,7 @@ void __stdcall __glim_LightModelf(GLenum p, GLfloat f)
 /* 690b61d0: __glim_LightModeli */
 void __stdcall __glim_LightModeli(GLenum p, GLint i)
 {
-    if (p >= GL_LIGHT_MODEL_LOCAL_VIEWER && p <= GL_LIGHT_MODEL_TWO_SIDE) {
+    if ((p >= GL_LIGHT_MODEL_LOCAL_VIEWER && p <= GL_LIGHT_MODEL_TWO_SIDE) || p == 0x81F8) {
         __glim_LightModeliv(p, &i);
         return;
     }

@@ -182,6 +182,7 @@ __GLtextureFxICD *__fastcall hwCreateTexture(__GLcontext *gc, GLuint name, GLuin
     t->t.params.tWrapMode = GL_REPEAT;
     t->t.params.minFilter = GL_NEAREST_MIPMAP_LINEAR;
     t->t.params.magFilter = GL_LINEAR;
+    t->t.lastLevel = 1000;              /* GL_TEXTURE_MAX_LEVEL */
     wglGlideTexKey(gc, (BYTE *)t);
     switch (target) {
       case 0:
@@ -223,10 +224,27 @@ __GLtextureFxICD *__fastcall hwCreateTexture(__GLcontext *gc, GLuint name, GLuin
 ** the nearest mip level).  Resident as onTmu 3: its odd mip levels for TMU0, then its even ones for TMU1 */
 GLboolean __fastcall hwTexIsSplit(__GLcontext *gc, __GLtextureICD *tex)
 {
+    GLint base, last;
+
+    __glTexLevelRange(tex, tex->maxLevel, &base, &last);
+    if (last == base)
+        return GL_FALSE;                /* one level (GL_TEXTURE_MAX_LEVEL): nothing to blend between */
     return gc->fx.trilinearMode == 2 && !gc->hwcx.windowed &&
            (tex->params.minFilter == GL_LINEAR_MIPMAP_LINEAR || tex->params.minFilter == GL_NEAREST_MIPMAP_LINEAR) &&
            (tex->level[0]->width >= 16 || tex->level[0]->height >= 16) &&
            tex->level[0]->compressedImage == NULL;
+}
+
+/* hwTexMipmapped: the texture is resident with more than its base level: a mipmap min filter and more than one
+** level in its GL_TEXTURE_BASE_LEVEL .. GL_TEXTURE_MAX_LEVEL range */
+static GLboolean hwTexMipmapped(const __GLtextureICD *tex)
+{
+    GLint base, last;
+
+    if (tex->params.minFilter == GL_NEAREST || tex->params.minFilter == GL_LINEAR)
+        return GL_FALSE;
+    __glTexLevelRange(tex, tex->maxLevel, &base, &last);
+    return (GLboolean)(last > base);
 }
 
 /* hwTexDownloadLevel: download rows t0..t1 of a level into the texture's TMU memory; a split texture (onTmu 3) gets
@@ -236,18 +254,24 @@ void __fastcall hwTexDownloadLevel(__GLcontext *gc, __GLtextureFxICD *tex, GLuin
 {
     GLuint start = TEX_SLOT(tex->mem, tmu)->start;
     GrTexInfo *info;
+    GLint base, last;
 
+    /* only the levels in use are in the TMU (OpenGL 1.2 level range); Glide numbers a level by its log2 size */
+    __glTexLevelRange(&tex->t, tex->t.maxLevel, &base, &last);
+    if (level < base || level > last || (TEX_SLOT(tex->onTmu, tmu) == 2 && level != base))
+        return;                         /* (resident with its base level only: no room for the others) */
     ICD_TEXDL(fmt, txTexCalcMapSize(tex->t.level[level]->width, t1 - t0 + 1, fmt));
     if (TEX_SLOT(tex->onTmu, tmu) == 3) {
         info = (GrTexInfo *)&tex->smallLodLog2;
-        grTexDownloadMipMapLevelPartial(GR_TMU0, start, tex->t.maxLevel - level, tex->t.maxLevel,
+        grTexDownloadMipMapLevelPartial(GR_TMU0, start, tex->t.maxLevel - level, tex->largeLodLog2,
                                         tex->aspectRatioLog2, fmt, GR_MIPMAPLEVELMASK_ODD, data, t0, t1);
         grTexDownloadMipMapLevelPartial(GR_TMU1, start + grTexTextureMemRequired(GR_MIPMAPLEVELMASK_ODD, info),
-                                        tex->t.maxLevel - level, tex->t.maxLevel, tex->aspectRatioLog2, fmt,
+                                        tex->t.maxLevel - level, tex->largeLodLog2, tex->aspectRatioLog2, fmt,
                                         GR_MIPMAPLEVELMASK_EVEN, data, t0, t1);
         return;
     }
-    hwTexDownloadRows(gc->fx.tmuTexUnit[tmu], start, level, tex->t.maxLevel, tex->aspectRatioLog2, fmt, data, t0, t1);
+    hwTexDownloadRows(gc->fx.tmuTexUnit[tmu], start, level - base, tex->largeLodLog2, tex->aspectRatioLog2, fmt, data,
+                      t0, t1);
 }
 
 /* 6903bb00 (size 547) -- MakeResident: tex->makeResident of the sst texture object: make it resident on a TMU. 
@@ -281,7 +305,7 @@ GLuint __fastcall MakeResident(__GLcontext *gc, __GLtextureFxICD *tex, GLuint a,
     if (state != 0) {
         if (hwTexIsSplit(gc, &tex->t))
             want = 3;
-        else if (tex->t.params.minFilter != GL_NEAREST && tex->t.params.minFilter != GL_LINEAR)
+        else if (hwTexMipmapped(&tex->t))
             want = 1;
         else
             want = 2;
@@ -308,19 +332,18 @@ GLuint __fastcall MakeResident(__GLcontext *gc, __GLtextureFxICD *tex, GLuint a,
 void __fastcall DownloadTexture(__GLcontext *gc, __GLtextureFxICD *tex, GLuint tmu)
 {
     GLint h, maxLevel, w;
-    GLint slot, level, fmt;
+    GLint slot, level, fmt, base;
     __GLmipMapLevelICD *lvl;
     GLubyte *data;
     const __GLtextureFormatICD *info;
 
     slot = __GL_TMU_SLOT(tmu);
-    if (tex->onTmu[slot] != 2)
-        maxLevel = tex->t.maxLevel;
-    else
-        maxLevel = 0;
+    __glTexLevelRange(&tex->t, tex->t.maxLevel, &base, &maxLevel);
+    if (tex->onTmu[slot] == 2)
+        maxLevel = base;                /* base level only */
     if (gc->hwcx.windowed)
         grSurfaceSetTextureSurfaceExt(gc->fx.tmuTexUnit[tmu], tex->mem[slot]->hwSurface);
-    for (level = 0; level <= maxLevel; level++) {
+    for (level = base; level <= maxLevel; level++) {
         lvl = tex->t.level[level];
         info = lvl->texFormat;
         if (info == NULL)
@@ -515,14 +538,17 @@ GLint __fastcall __glSSTAllocateTextureMemory(__GLcontext *gc, __GLtextureFxICD 
 {
     __GLtexMgrFxICD *m = (__GLtexMgrFxICD *)gc->texMgr;
     __GLtexMemBlockICD *blk, *b;
-    GLint state, size, left;
+    GLint state, size, left, base, last;
 
-    if (tex->t.params.minFilter != GL_NEAREST && tex->t.params.minFilter != GL_LINEAR) {
+    /* Glide's LOD range: the level range in use (all levels by default), or its first level alone */
+    __glTexLevelRange(&tex->t, tex->t.maxLevel, &base, &last);
+    tex->largeLodLog2 = tex->t.maxLevel - base;
+    if (hwTexMipmapped(&tex->t)) {
         state = hwTexIsSplit(gc, &tex->t) ? 3 : 1;
-        tex->smallLodLog2 = 0;
+        tex->smallLodLog2 = tex->t.maxLevel - last;
     } else {
         state = 2;
-        tex->smallLodLog2 = tex->t.maxLevel;
+        tex->smallLodLog2 = tex->largeLodLog2;
     }
     if (gc->hwcx.windowed) {
         blk = TEX_SLOT(tex->mem, tmu);

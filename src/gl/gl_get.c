@@ -330,6 +330,18 @@ void __stdcall __glim_GetTexParameterfv(GLenum target, GLenum pname, GLfloat v[]
       case GL_TEXTURE_PRIORITY:
 	v[0] = LookupNamePrio(gc, target)->priority;
 	break;
+      case 0x813C:				/* GL_TEXTURE_BASE_LEVEL (OpenGL 1.2) */
+	v[0] = (GLfloat)LookupTexture(gc, target)->baseLevel;
+	break;
+      case 0x813D:				/* GL_TEXTURE_MAX_LEVEL */
+	v[0] = (GLfloat)LookupTexture(gc, target)->lastLevel;
+	break;
+      case 0x813A:				/* GL_TEXTURE_MIN_LOD: accepted, not used */
+	v[0] = -1000.0f;
+	break;
+      case 0x813B:				/* GL_TEXTURE_MAX_LOD */
+	v[0] = 1000.0f;
+	break;
       case GL_TEXTURE_RESIDENT:
 	{
 	    __GLtextureICD *tex = LookupTexture(gc, target);
@@ -378,6 +390,18 @@ void __stdcall __glim_GetTexParameteriv(GLenum target, GLenum pname, GLint v[])
       case GL_TEXTURE_PRIORITY:
 	v[0] = __GL_FLOAT_TO_I(LookupNamePrio(gc, target)->priority);
 	break;
+      case 0x813C:				/* GL_TEXTURE_BASE_LEVEL (OpenGL 1.2) */
+	v[0] = LookupTexture(gc, target)->baseLevel;
+	break;
+      case 0x813D:				/* GL_TEXTURE_MAX_LEVEL */
+	v[0] = LookupTexture(gc, target)->lastLevel;
+	break;
+      case 0x813A:				/* GL_TEXTURE_MIN_LOD: accepted, not used */
+	v[0] = -1000;
+	break;
+      case 0x813B:				/* GL_TEXTURE_MAX_LOD */
+	v[0] = 1000;
+	break;
       case GL_TEXTURE_RESIDENT:
 	/* fix: the flag's value for the active unit's TMU slot (the original returned &hwHandle[0], never 0) */
 	v[0] = LookupTexture(gc, target)->hwHandle[__GL_TMU_SLOT(gc->fx.activeTexture)] ? GL_TRUE : GL_FALSE;
@@ -396,6 +420,10 @@ void __stdcall __glim_GetTexLevelParameterfv(GLenum target, GLint level, GLenum 
     __GL_SETUP_NOT_IN_BEGIN();
     __GL_API_GET();
 
+    {   /* OpenGL 1.2: the 3D targets (gl_tex.c) */
+        GLint v3;
+        if (__glTex3DLevelParam(target, level, pname, &v3)) { v[0] = (GLfloat)v3; return; }
+    }
     tex = LookupTexture(gc, target);
 
     if (!tex) {
@@ -463,6 +491,10 @@ void __stdcall __glim_GetTexLevelParameteriv(GLenum target, GLint level, GLenum 
     __GL_SETUP_NOT_IN_BEGIN();
     __GL_API_GET();
 
+    {   /* OpenGL 1.2: the 3D targets (gl_tex.c) */
+        GLint v3;
+        if (__glTex3DLevelParam(target, level, pname, &v3)) { v[0] = v3; return; }
+    }
     tex = LookupTexture(gc, target);
 
     if (!tex) {
@@ -551,7 +583,7 @@ void __fastcall __glInitImagePack(__GLcontext *gc, __GLpixelSpanInfoICD *spanInf
 /* 690bbdb0 -- __glim_GetTexImage: no proxy / 3D handling, depth taken without the dim test; FXT1
 ** levels are decompressed into a fresh imports.malloc buffer (never freed, as the original) that
 ** stands in for the level buffer during the fetch */
-void __stdcall __glim_GetTexImage(GLenum target, GLint level,
+static void __stdcall __glim_GetTexImage_base(GLenum target, GLint level,
 			     GLenum format, GLenum type, GLvoid *texels)
 {
     GLint width, height;
@@ -1038,4 +1070,34 @@ void __stdcall __glim_GetTexEnvfv(GLenum target, GLenum pname, GLfloat v[])
         return;
     }
     __glSetError(GL_INVALID_ENUM);
+}
+
+/* glGetTexImage with an OpenGL 1.2 packed type: fetched as GL_UNSIGNED_BYTE and packed here (si_px_api.c) */
+void __stdcall __glim_GetTexImage(GLenum target, GLint level, GLenum format, GLenum type, GLvoid *texels)
+{
+    __GLcontext *gc = __glCurrentGC();
+    __GLpixelPackMode saved;
+    __GLtextureICD *tex;
+    GLubyte *tmp;
+    GLint w = 0, h = 0;
+
+    if (!__glPacked12Type(type, NULL)) {
+        __glim_GetTexImage_base(target, level, format, type, texels);
+        return;
+    }
+    if (!__glPacked12FormatOK(format, type)) return;
+    tex = LookupTexture(gc, target);
+    if (tex != NULL && level >= 0 && level < gc->constants.maxMipMapLevel) {
+        w = tex->level[level]->width;
+        h = tex->level[level]->height;
+    }
+    if (texels == NULL || w <= 0 || h <= 0) {               /* (the errors come from the function itself) */
+        __glim_GetTexImage_base(target, level, format, GL_UNSIGNED_BYTE, texels);
+        return;
+    }
+    tmp = __glPacked12Fetch(gc, w, h, type, &saved);
+    if (tmp == NULL) return;
+    memset(tmp, 0, (size_t)w * h * __glPacked12Type(type, NULL));
+    __glim_GetTexImage_base(target, level, format, GL_UNSIGNED_BYTE, tmp);
+    __glPacked12Store(gc, w, h, type, tmp, texels, &saved);
 }

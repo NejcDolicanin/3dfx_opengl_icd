@@ -365,6 +365,14 @@ void __stdcall __glim_PixelStorei(GLenum mode, GLint value)
     ps = &gc->state.pixel;
 
     switch (mode) {
+      case 0x806B: case 0x806C:                     /* OpenGL 1.2 GL_PACK_SKIP_IMAGES, GL_PACK_IMAGE_HEIGHT */
+      case 0x806D: case 0x806E:                     /* GL_UNPACK_SKIP_IMAGES, GL_UNPACK_IMAGE_HEIGHT */
+        if (g_glVersion < 12) {                     /* accepted for the 3D texture calls, which keep no image */
+            __glSetError(GL_INVALID_ENUM);
+            return;
+        }
+        if (value < 0) __glSetError(GL_INVALID_VALUE);
+        return;
       case GL_PACK_ROW_LENGTH:
         if (value < 0) {
             __glSetError(GL_INVALID_VALUE);
@@ -717,6 +725,7 @@ void __stdcall __glim_CopyPixels(GLint x, GLint y, GLsizei width, GLsizei height
 void __stdcall __glim_PixelStoref(GLenum mode, GLfloat value)
 {
     switch (mode) {
+      case 0x806B: case 0x806C: case 0x806D: case 0x806E:    /* the OpenGL 1.2 image modes */
       case GL_PACK_ROW_LENGTH:
       case GL_PACK_SKIP_ROWS:
       case GL_PACK_SKIP_PIXELS:

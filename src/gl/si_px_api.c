@@ -6,6 +6,210 @@
 #include "glsi.h"
 #include "si_names.h"
 #include "icdprotos.h"
+#include <stdlib.h>
+
+/* ---- OpenGL 1.2 packed pixel types (FX_GL_VERSION 1.2; not in the original) ---------------------------------------
+** The original takes the five EXT_packed_pixels types.  1.2 adds GL_UNSIGNED_SHORT_5_6_5, GL_UNSIGNED_BYTE_2_3_3_REV
+** and the _REV forms.  They are converted on the CPU, outside the span pipeline: an image coming in (glTexImage,
+** glTexSubImage, glDrawPixels) is first rewritten as tightly packed GL_UNSIGNED_BYTE components of the same format,
+** an image going out (glReadPixels, glGetTexImage) is fetched as GL_UNSIGNED_BYTE and packed into the caller's
+** buffer; the glPixelStore modes are applied here and set to their defaults around the inner call.  Not handled:
+** these types inside display lists. */
+#define GL_UNSIGNED_BYTE_2_3_3_REV_12       0x8362
+#define GL_UNSIGNED_SHORT_5_6_5_12          0x8363
+#define GL_UNSIGNED_SHORT_5_6_5_REV_12      0x8364
+#define GL_UNSIGNED_SHORT_4_4_4_4_REV_12    0x8365
+#define GL_UNSIGNED_SHORT_1_5_5_5_REV_12    0x8366
+#define GL_UNSIGNED_INT_8_8_8_8_REV_12      0x8367
+#define GL_UNSIGNED_INT_2_10_10_10_REV_12   0x8368
+
+/* a 1.2 packed type, while 1.2 is offered: 3 or 4 components and its element size in *esize, else 0 */
+GLint __fastcall __glPacked12Type(GLenum type, GLint *esize)
+{
+    GLint dummy;
+
+    if (esize == NULL) esize = &dummy;
+    if (g_glVersion < 12) return 0;
+    switch (type) {
+      case GL_UNSIGNED_BYTE_2_3_3_REV_12:     *esize = 1; return 3;
+      case GL_UNSIGNED_SHORT_5_6_5_12:
+      case GL_UNSIGNED_SHORT_5_6_5_REV_12:    *esize = 2; return 3;
+      case GL_UNSIGNED_SHORT_4_4_4_4_REV_12:
+      case GL_UNSIGNED_SHORT_1_5_5_5_REV_12:  *esize = 2; return 4;
+      case GL_UNSIGNED_INT_8_8_8_8_REV_12:
+      case GL_UNSIGNED_INT_2_10_10_10_REV_12: *esize = 4; return 4;
+    }
+    return 0;
+}
+
+/* the format must have as many components as the type has fields (GL_INVALID_OPERATION otherwise) */
+GLboolean __fastcall __glPacked12FormatOK(GLenum format, GLenum type)
+{
+    GLboolean ok;
+
+    if (__glPacked12Type(type, NULL) == 3)
+        ok = (GLboolean)(format == GL_RGB);
+    else
+        ok = (GLboolean)(format == GL_RGBA || format == 0x80E1 /* GL_BGRA */ || format == 0x8000 /* GL_ABGR_EXT */);
+    if (!ok)
+        __glSetError(GL_INVALID_OPERATION);
+    return ok;
+}
+
+#define P12_UP(v, max)      ((GLubyte)(((v) * 255u + (max) / 2u) / (max)))      /* field -> byte */
+#define P12_DOWN(c, max)    (((GLuint)(c) * (max) + 127u) / 255u)               /* byte -> field */
+
+/* the fields of one element, first component first, as bytes */
+static void packed12Split(GLenum type, GLuint v, GLubyte *c)
+{
+    switch (type) {
+      case GL_UNSIGNED_BYTE_2_3_3_REV_12:
+        c[0] = P12_UP(v & 7, 7); c[1] = P12_UP((v >> 3) & 7, 7); c[2] = P12_UP((v >> 6) & 3, 3);
+        break;
+      case GL_UNSIGNED_SHORT_5_6_5_12:
+        c[0] = P12_UP((v >> 11) & 31, 31); c[1] = P12_UP((v >> 5) & 63, 63); c[2] = P12_UP(v & 31, 31);
+        break;
+      case GL_UNSIGNED_SHORT_5_6_5_REV_12:
+        c[0] = P12_UP(v & 31, 31); c[1] = P12_UP((v >> 5) & 63, 63); c[2] = P12_UP((v >> 11) & 31, 31);
+        break;
+      case GL_UNSIGNED_SHORT_4_4_4_4_REV_12:
+        c[0] = P12_UP(v & 15, 15); c[1] = P12_UP((v >> 4) & 15, 15);
+        c[2] = P12_UP((v >> 8) & 15, 15); c[3] = P12_UP((v >> 12) & 15, 15);
+        break;
+      case GL_UNSIGNED_SHORT_1_5_5_5_REV_12:
+        c[0] = P12_UP(v & 31, 31); c[1] = P12_UP((v >> 5) & 31, 31);
+        c[2] = P12_UP((v >> 10) & 31, 31); c[3] = (GLubyte)((v & 0x8000) ? 255 : 0);
+        break;
+      case GL_UNSIGNED_INT_8_8_8_8_REV_12:
+        c[0] = (GLubyte)v; c[1] = (GLubyte)(v >> 8); c[2] = (GLubyte)(v >> 16); c[3] = (GLubyte)(v >> 24);
+        break;
+      case GL_UNSIGNED_INT_2_10_10_10_REV_12:
+        c[0] = P12_UP(v & 1023, 1023); c[1] = P12_UP((v >> 10) & 1023, 1023);
+        c[2] = P12_UP((v >> 20) & 1023, 1023); c[3] = P12_UP(v >> 30, 3);
+        break;
+    }
+}
+
+static GLuint packed12Join(GLenum type, const GLubyte *c)
+{
+    switch (type) {
+      case GL_UNSIGNED_BYTE_2_3_3_REV_12:
+        return P12_DOWN(c[0], 7) | (P12_DOWN(c[1], 7) << 3) | (P12_DOWN(c[2], 3) << 6);
+      case GL_UNSIGNED_SHORT_5_6_5_12:
+        return (P12_DOWN(c[0], 31) << 11) | (P12_DOWN(c[1], 63) << 5) | P12_DOWN(c[2], 31);
+      case GL_UNSIGNED_SHORT_5_6_5_REV_12:
+        return P12_DOWN(c[0], 31) | (P12_DOWN(c[1], 63) << 5) | (P12_DOWN(c[2], 31) << 11);
+      case GL_UNSIGNED_SHORT_4_4_4_4_REV_12:
+        return P12_DOWN(c[0], 15) | (P12_DOWN(c[1], 15) << 4) | (P12_DOWN(c[2], 15) << 8) | (P12_DOWN(c[3], 15) << 12);
+      case GL_UNSIGNED_SHORT_1_5_5_5_REV_12:
+        return P12_DOWN(c[0], 31) | (P12_DOWN(c[1], 31) << 5) | (P12_DOWN(c[2], 31) << 10) | (c[3] >= 128 ? 0x8000u : 0);
+      case GL_UNSIGNED_INT_8_8_8_8_REV_12:
+        return (GLuint)c[0] | ((GLuint)c[1] << 8) | ((GLuint)c[2] << 16) | ((GLuint)c[3] << 24);
+      case GL_UNSIGNED_INT_2_10_10_10_REV_12:
+        return P12_DOWN(c[0], 1023) | (P12_DOWN(c[1], 1023) << 10) | (P12_DOWN(c[2], 1023) << 20) | (P12_DOWN(c[3], 3) << 30);
+    }
+    return 0;
+}
+
+/* where the caller's image starts and how far its rows are apart, by the glPixelStore modes */
+static GLubyte *packed12Rows(const __GLpixelPackMode *m, GLsizei w, GLint esize, const GLvoid *pixels, GLint *stride)
+{
+    GLint groups = m->lineLength ? (GLint)m->lineLength : w;
+    GLint bytes = groups * esize;
+    GLint a = (GLint)m->alignment;
+
+    if (esize < a)
+        bytes = (bytes + a - 1) / a * a;
+    *stride = bytes;
+    return (GLubyte *)pixels + m->skipLines * bytes + m->skipPixels * esize;
+}
+
+static const __GLpixelPackMode s_packed12Tight = { GL_FALSE, GL_FALSE, { 0, 0 }, 0, 0, 0, 1 };
+
+/* an incoming image of a 1.2 packed type as a new, tightly packed GL_UNSIGNED_BYTE image; the unpack modes are set
+** to their defaults, the caller's kept in *saved.  NULL: out of memory (error set).  __glPacked12Done frees it */
+GLubyte *__fastcall __glPacked12Unpack(__GLcontext *gc, GLsizei w, GLsizei h, GLenum type, const GLvoid *pixels,
+                                       __GLpixelPackMode *saved)
+{
+    GLint esize, n = __glPacked12Type(type, &esize), stride, x, y;
+    GLubyte *tmp, *o;
+    const GLubyte *row, *e;
+    GLuint v;
+
+    tmp = (GLubyte *)malloc((size_t)w * h * n);
+    if (tmp == NULL) {
+        __glSetError(GL_OUT_OF_MEMORY);
+        return NULL;
+    }
+    *saved = gc->state.pixel.unpackModes;
+    row = packed12Rows(saved, w, esize, pixels, &stride);
+    o = tmp;
+    for (y = 0; y < h; y++, row += stride) {
+        for (x = 0, e = row; x < w; x++, e += esize, o += n) {
+            if (esize == 1) {
+                v = e[0];
+            } else if (esize == 2) {
+                v = saved->swapEndian ? (((GLuint)e[0] << 8) | e[1]) : (((GLuint)e[1] << 8) | e[0]);
+            } else if (saved->swapEndian) {
+                v = ((GLuint)e[0] << 24) | ((GLuint)e[1] << 16) | ((GLuint)e[2] << 8) | e[3];
+            } else {
+                v = ((GLuint)e[3] << 24) | ((GLuint)e[2] << 16) | ((GLuint)e[1] << 8) | e[0];
+            }
+            packed12Split(type, v, o);
+        }
+    }
+    gc->state.pixel.unpackModes = s_packed12Tight;
+    return tmp;
+}
+
+void __fastcall __glPacked12Done(__GLcontext *gc, GLubyte *tmp, const __GLpixelPackMode *saved)
+{
+    gc->state.pixel.unpackModes = *saved;
+    free(tmp);
+}
+
+/* an outgoing image: a buffer for w x h tightly packed GL_UNSIGNED_BYTE groups, the pack modes set to their defaults
+** (*saved keeps the caller's).  __glPacked12Store packs it into the caller's buffer and frees it */
+GLubyte *__fastcall __glPacked12Fetch(__GLcontext *gc, GLsizei w, GLsizei h, GLenum type, __GLpixelPackMode *saved)
+{
+    GLubyte *tmp = (GLubyte *)malloc((size_t)w * h * __glPacked12Type(type, NULL));
+
+    if (tmp == NULL) {
+        __glSetError(GL_OUT_OF_MEMORY);
+        return NULL;
+    }
+    *saved = gc->state.pixel.packModes;
+    gc->state.pixel.packModes = s_packed12Tight;
+    return tmp;
+}
+
+void __fastcall __glPacked12Store(__GLcontext *gc, GLsizei w, GLsizei h, GLenum type, GLubyte *tmp, GLvoid *pixels,
+                                  const __GLpixelPackMode *saved)
+{
+    GLint esize, n = __glPacked12Type(type, &esize), stride, x, y;
+    const GLubyte *i = tmp;
+    GLubyte *row, *e;
+    GLuint v;
+
+    gc->state.pixel.packModes = *saved;
+    row = packed12Rows(saved, w, esize, pixels, &stride);
+    for (y = 0; y < h; y++, row += stride) {
+        for (x = 0, e = row; x < w; x++, e += esize, i += n) {
+            v = packed12Join(type, i);
+            if (esize == 1) {
+                e[0] = (GLubyte)v;
+            } else if (esize == 2) {
+                if (saved->swapEndian) { e[0] = (GLubyte)(v >> 8); e[1] = (GLubyte)v; }
+                else                   { e[1] = (GLubyte)(v >> 8); e[0] = (GLubyte)v; }
+            } else if (saved->swapEndian) {
+                e[0] = (GLubyte)(v >> 24); e[1] = (GLubyte)(v >> 16); e[2] = (GLubyte)(v >> 8); e[3] = (GLubyte)v;
+            } else {
+                e[3] = (GLubyte)(v >> 24); e[2] = (GLubyte)(v >> 16); e[1] = (GLubyte)(v >> 8); e[0] = (GLubyte)v;
+            }
+        }
+    }
+    free(tmp);
+}
 
 /* 690c04a0 -- __glim_ReadBuffer */
 void __stdcall __glim_ReadBuffer(GLenum mode)
@@ -57,7 +261,7 @@ invalid_buffer:
 }
 
 /* 690c0850 -- __glim_DrawPixels */
-void __stdcall __glim_DrawPixels(GLsizei width, GLsizei height, GLenum format,
+static void __stdcall __glim_DrawPixels_base(GLsizei width, GLsizei height, GLenum format,
                        GLenum type, const GLvoid *pixels)
 {
     GLuint beginMode;
@@ -94,7 +298,7 @@ void __stdcall __glim_DrawPixels(GLsizei width, GLsizei height, GLenum format,
 }
 
 /* 690c0950 -- __glim_ReadPixels */
-void __stdcall __glim_ReadPixels(GLint x, GLint y, GLsizei width, GLsizei height, 
+static void __stdcall __glim_ReadPixels_base(GLint x, GLint y, GLsizei width, GLsizei height, 
                        GLenum format, GLenum type, GLvoid *buf)
 {
     GLuint beginMode;
@@ -483,4 +687,49 @@ void __stdcall __glim_PixelMapusv(GLenum map, GLint mapSize,
         __glSetError(GL_INVALID_ENUM);
         return;
     }
+}
+
+/* glDrawPixels / glReadPixels: the 1.2 packed types are converted here (__glPacked12*), the rest goes on as it was */
+void __stdcall __glim_DrawPixels(GLsizei width, GLsizei height, GLenum format, GLenum type, const GLvoid *pixels)
+{
+    __GLcontext *gc = __glCurrentGC();
+    __GLpixelPackMode saved;
+    GLubyte *tmp;
+
+    if (!__glPacked12Type(type, NULL)) {
+        __glim_DrawPixels_base(width, height, format, type, pixels);
+        return;
+    }
+    if (!__glPacked12FormatOK(format, type)) return;
+    if (pixels == NULL || width <= 0 || height <= 0) {
+        __glim_DrawPixels_base(width, height, format, GL_UNSIGNED_BYTE, pixels);
+        return;
+    }
+    tmp = __glPacked12Unpack(gc, width, height, type, pixels, &saved);
+    if (tmp == NULL) return;
+    __glim_DrawPixels_base(width, height, format, GL_UNSIGNED_BYTE, tmp);
+    __glPacked12Done(gc, tmp, &saved);
+}
+
+void __stdcall __glim_ReadPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type,
+                                 GLvoid *buf)
+{
+    __GLcontext *gc = __glCurrentGC();
+    __GLpixelPackMode saved;
+    GLubyte *tmp;
+
+    if (!__glPacked12Type(type, NULL)) {
+        __glim_ReadPixels_base(x, y, width, height, format, type, buf);
+        return;
+    }
+    if (!__glPacked12FormatOK(format, type)) return;
+    if (buf == NULL || width <= 0 || height <= 0) {
+        __glim_ReadPixels_base(x, y, width, height, format, GL_UNSIGNED_BYTE, buf);
+        return;
+    }
+    tmp = __glPacked12Fetch(gc, width, height, type, &saved);
+    if (tmp == NULL) return;
+    memset(tmp, 0, (size_t)width * height * __glPacked12Type(type, NULL));
+    __glim_ReadPixels_base(x, y, width, height, format, GL_UNSIGNED_BYTE, tmp);
+    __glPacked12Store(gc, width, height, type, tmp, buf, &saved);
 }

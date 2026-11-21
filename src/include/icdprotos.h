@@ -837,6 +837,32 @@ void __fastcall __glSSTInitDepth(__GLdepthBufferICD *fb, __GLcontext *gc);
 GLboolean __fastcall hwGlideInit(void);
 GLboolean __fastcall hwHasPixextExt(void);
 const char *__fastcall hwRegOrEnvString(const char *name);
+GLint __fastcall __glTexLevelParam(__GLcontext *gc, __GLtextureICD *tex, GLenum pname, __GLfloat v);    /* gl_tex.c */
+void __fastcall __glTexLevelRange(const __GLtextureICD *tex, GLint top, GLint *base, GLint *last);
+/* gl_tex.c: the OpenGL 1.2 3D texture stand-in */
+GLboolean __fastcall __glTex3DTarget(GLenum target);
+GLboolean __fastcall __glTex3DBind(__GLcontext *gc, GLenum target, GLuint texture);
+GLuint __fastcall __glTex3DBinding(__GLcontext *gc);
+GLboolean __fastcall __glTex3DLevelParam(GLenum target, GLint level, GLenum pname, GLint *out);
+void APIENTRY __glim_TexImage3D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height,
+                                GLsizei depth, GLint border, GLenum format, GLenum type, const GLvoid *pixels);
+void APIENTRY __glim_TexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset,
+                                   GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type,
+                                   const GLvoid *pixels);
+void APIENTRY __glim_CopyTexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset,
+                                       GLint x, GLint y, GLsizei width, GLsizei height);
+/* si_px_api.c: the OpenGL 1.2 packed pixel types */
+GLint __fastcall __glPacked12Type(GLenum type, GLint *esize);
+GLboolean __fastcall __glPacked12FormatOK(GLenum format, GLenum type);
+GLubyte *__fastcall __glPacked12Unpack(__GLcontext *gc, GLsizei w, GLsizei h, GLenum type, const GLvoid *pixels,
+                                       __GLpixelPackMode *saved);
+void __fastcall __glPacked12Done(__GLcontext *gc, GLubyte *tmp, const __GLpixelPackMode *saved);
+GLubyte *__fastcall __glPacked12Fetch(__GLcontext *gc, GLsizei w, GLsizei h, GLenum type, __GLpixelPackMode *saved);
+void __fastcall __glPacked12Store(__GLcontext *gc, GLsizei w, GLsizei h, GLenum type, GLubyte *tmp, GLvoid *pixels,
+                                  const __GLpixelPackMode *saved);
+extern GLint g_glVersion;                                           /* sst_settings.c: 11 or 12 (FX_GL_VERSION) */
+void APIENTRY __glim_DrawRangeElements(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type,
+                                       const GLvoid *indices);     /* gl_attrib.c */
 void __fastcall hwFifoStripTri(__GLvertexICD *a, __GLvertexICD *b, __GLvertexICD *c);  /* the FIFO strip / fan triangle */
 GLboolean __fastcall hwHasSurfaceExt(void);
 void __fastcall hwUpdateClipRegion(void);

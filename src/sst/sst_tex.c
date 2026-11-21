@@ -106,6 +106,25 @@ void __fastcall __glSSTExtractTexelRGBA8(__GLmipMapLevelICD *level, __GLtextureI
     }
 }
 
+/* the OpenGL 1.2 level parameters on the hardware path (__glTexLevelParam): a changed level range drops the
+** texture's download, so the next use sizes and loads it again */
+static GLboolean sstTexLevelParam(__GLcontext *gc, __GLtextureICD *tex, GLenum pname, __GLfloat v)
+{
+    GLint r = __glTexLevelParam(gc, tex, pname, v), i;
+
+    if (r == 0)
+        return GL_FALSE;
+    if (r == 2) {
+        for (i = 0; i < 2; i++) {
+            tex->hwHandle[i] = 0;
+            ((__GLtextureFxICD *)tex)->onTmu[i] = 0;
+        }
+        gc->hwcx.unitTexture[gc->fx.activeTexture] = (void *)-1;
+    }
+    __GL_DELAY_VALIDATE(gc);
+    return GL_TRUE;
+}
+
 /* 6905cf50 -- __glsstim_TexParameterfv: __glim_TexParameterfv of the hardware path (6909d160 plus): a new min
 ** filter clears the object's per-TMU resident flags, the priority is clamped by the module's own Clampf
 ** (6905d1c0), and the unit's cached hardware texture is dropped and the object's texture key rebuilt
@@ -119,6 +138,8 @@ void __stdcall __glsstim_TexParameterfv(GLenum target, GLenum pname, const GLflo
     __GLtexNamePriICD *texName;
     __GL_SETUP_NOT_IN_BEGIN();
 
+    if (__glTex3DTarget(target)) return;                 /* OpenGL 1.2 GL_TEXTURE_3D: accepted, not kept */
+    if (__glTex3DTarget(target)) return;                 /* OpenGL 1.2 GL_TEXTURE_3D: accepted, not kept */
     params = __glLookUpActiveTextureParams(gc, target);
     if (!params) goto bad_enum;
     tex = __glLookupActiveTexture(gc, target);
@@ -127,6 +148,8 @@ void __stdcall __glsstim_TexParameterfv(GLenum target, GLenum pname, const GLflo
         return;
     }
 
+    if (sstTexLevelParam(gc, tex, pname, pv[0]))
+        return;
     switch (pname) {
       case GL_TEXTURE_WRAP_S:
         switch (e = (GLenum) pv[0]) {
@@ -214,12 +237,15 @@ float __fastcall sstTex_Clampf(GLuint ecx_unused, GLuint edx_unused, float x, fl
 /* 6905d200 -- __glsstim_TexParameterf: glTexParameterf (hw) */
 void __stdcall __glsstim_TexParameterf(GLenum target, GLenum pname, GLfloat param)
 {
+    if (__glTex3DTarget(target)) { return; }             /* OpenGL 1.2 GL_TEXTURE_3D (GL_TEXTURE_WRAP_R too) */
     switch (pname) {
       case GL_TEXTURE_MAG_FILTER:
       case GL_TEXTURE_MIN_FILTER:
       case GL_TEXTURE_WRAP_S:
       case GL_TEXTURE_WRAP_T:
       case GL_TEXTURE_PRIORITY:
+      case 0x813A: case 0x813B:               /* GL_TEXTURE_MIN_LOD / MAX_LOD (OpenGL 1.2) */
+      case 0x813C: case 0x813D:               /* GL_TEXTURE_BASE_LEVEL / MAX_LEVEL */
         __glsstim_TexParameterfv(target, pname, &param);
         return;
       default:
@@ -231,12 +257,15 @@ void __stdcall __glsstim_TexParameterf(GLenum target, GLenum pname, GLfloat para
 /* 6905d4b0 -- __glsstim_TexParameteri: glTexParameteri (hw) */
 void __stdcall __glsstim_TexParameteri(GLenum target, GLenum pname, GLint param)
 {
+    if (__glTex3DTarget(target)) { return; }             /* OpenGL 1.2 GL_TEXTURE_3D (GL_TEXTURE_WRAP_R too) */
     switch (pname) {
       case GL_TEXTURE_MAG_FILTER:
       case GL_TEXTURE_MIN_FILTER:
       case GL_TEXTURE_WRAP_S:
       case GL_TEXTURE_WRAP_T:
       case GL_TEXTURE_PRIORITY:
+      case 0x813A: case 0x813B:               /* GL_TEXTURE_MIN_LOD / MAX_LOD (OpenGL 1.2) */
+      case 0x813C: case 0x813D:               /* GL_TEXTURE_BASE_LEVEL / MAX_LEVEL */
         __glsstim_TexParameteriv(target, pname, &param);
         return;
       default:
@@ -666,7 +695,7 @@ void __stdcall __glsstim_TexEnvi(GLenum target, GLenum pname, GLint param)
 
 /* 6905e090 -- s_tex.c __glsstim_TexImage1D of the sst path: no validation, no pixel-path width adjustment;
 ** the texture is taken off every TMU */
-void __stdcall __glsstim_TexImage1D(GLenum target, GLint lod, GLint components, GLsizei length, GLint border,
+static void __stdcall __glsstim_TexImage1D_base(GLenum target, GLint lod, GLint components, GLsizei length, GLint border,
                             GLenum format, GLenum type, const GLvoid *buf)
 {
     __GLtextureICD *tex;
@@ -699,7 +728,7 @@ void __stdcall __glsstim_TexImage1D(GLenum target, GLint lod, GLint components, 
 
 /* 6905e1f0 (size 604) -- __glsstim_TexImage2D: glTexImage2D, hardware path (1x1 .. 2x2 RGBA levels are replicated
 ** to 4x4) */
-void __stdcall __glsstim_TexImage2D(GLenum target, GLint level, GLint components,
+static void __stdcall __glsstim_TexImage2D_base(GLenum target, GLint level, GLint components,
                              GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type,
                              const GLvoid *pixels)
 {
@@ -756,7 +785,7 @@ void __stdcall __glsstim_TexImage2D(GLenum target, GLint level, GLint components
 
 /* 6905e450 -- s_tex.c __glsstim_TexSubImage1D of the sst path (as gl_tex.c 6909fb80): no validation, no
 ** pixel-path width adjustment; the texture is taken off every TMU */
-void __stdcall __glsstim_TexSubImage1D(GLenum target, GLint lod, GLint xoffset, GLint length, GLenum format,
+static void __stdcall __glsstim_TexSubImage1D_base(GLenum target, GLint lod, GLint xoffset, GLint length, GLenum format,
                             GLenum type, const GLvoid *buf)
 {
     __GLtextureICD *tex;
@@ -779,7 +808,7 @@ void __stdcall __glsstim_TexSubImage1D(GLenum target, GLint lod, GLint xoffset, 
 }
 
 /* 6905e570 (size 996) -- __glsstim_TexSubImage2D: glTexSubImage2D, hardware path */
-void __stdcall __glsstim_TexSubImage2D(GLenum target, GLint level, GLint xoffset,
+static void __stdcall __glsstim_TexSubImage2D_base(GLenum target, GLint level, GLint xoffset,
                              GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type,
                              const GLvoid *pixels)
 {
@@ -891,8 +920,7 @@ void __stdcall __glsstim_TexSubImage2D(GLenum target, GLint level, GLint xoffset
                 if (gc->hwcx.windowed) {
                     grSurfaceSetTextureSurfaceExt(gc->fx.tmuTexUnit[i], tex->mem[__GL_TMU_SLOT(i)]->hwSurface);
                 }
-                hwTexDownloadRows(gc->fx.tmuTexUnit[i], tex->mem[__GL_TMU_SLOT(i)]->start, level,
-                             tex->t.maxLevel, tex->aspectRatioLog2, li->grFormat, buf, t0, t1);
+                hwTexDownloadLevel(gc, tex, i, level, li->grFormat, buf, t0, t1);
             }
         }
     }
@@ -905,6 +933,7 @@ void __stdcall __glsstim_BindTexture(GLenum target, GLuint texture)
     GLuint targetIndex;
     __GL_SETUP_NOT_IN_BEGIN();
 
+    if (__glTex3DBind(gc, target, texture)) return;     /* OpenGL 1.2 GL_TEXTURE_3D: accepted, not drawn */
     switch (target) {
     case GL_TEXTURE_1D:
         targetIndex = 0;
@@ -1149,6 +1178,7 @@ void __stdcall __glsstim_GetTexLevelParameteriv(GLenum target, GLint level, GLen
     __GL_SETUP();
 
     ((void (__stdcall *)(GLenum, GLint, GLenum, GLint *))__glim_GetTexLevelParameteriv)(target, level, pname, params);
+    if (__glTex3DTarget(target)) return;                 /* (OpenGL 1.2: no texture object behind it) */
     tex = (__GLtextureFxICD *)__glLookUpTexture(gc, target, gc->fx.activeTexture);
     if (tex && level >= 0 && level < gc->constants.maxMipMapLevel && pname == 0x86a1) {
         GLint v;
@@ -1170,6 +1200,7 @@ void __stdcall __glsstim_GetTexLevelParameterfv(GLenum target, GLint level, GLen
     __GL_SETUP();
 
     ((void (__stdcall *)(GLenum, GLint, GLenum, GLfloat *))__glim_GetTexLevelParameterfv)(target, level, pname, params);
+    if (__glTex3DTarget(target)) return;                 /* (OpenGL 1.2: no texture object behind it) */
     tex = (__GLtextureFxICD *)__glLookUpTexture(gc, target, gc->fx.activeTexture);
     if (tex && level >= 0 && level < gc->constants.maxMipMapLevel && pname == 0x86a1) {
         if (tex->t.level[level]->compressedImage && !tex->wideAspect) {
@@ -1202,6 +1233,8 @@ void __stdcall __glsstim_TexParameteriv(GLenum target, GLenum pname, const GLint
         return;
     }
 
+    if (sstTexLevelParam(gc, tex, pname, (__GLfloat)pv[0]))
+        return;
     switch (pname) {
       case GL_TEXTURE_WRAP_S:
         switch (e = (GLenum) pv[0]) {
@@ -1627,3 +1660,54 @@ const __GLtextureFormatICD g_texFmtDXT5 = {                     /* GR_TEXFMT_ARG
     16, 0, 8, 8, 8, 8, 0, 0,  32,  GL_RGBA, 4, 4,
     (__GLproc)__glSSTExtractTexelRGBA8, (__GLproc)__glSSTExtractTexelRGBA8_B, NULL, NULL, { 0, 0 }, TEXCMP_GR_DXT5
 };
+
+/* glTexImage / glTexSubImage with an OpenGL 1.2 packed type: the image is rewritten as GL_UNSIGNED_BYTE first
+** (si_px_api.c __glPacked12*); every other type goes on unchanged */
+#define PACKED12_TEX(w, h, call_same, call_bytes, call_tmp)                                 \
+    __GLcontext *gc = __glCurrentGC();                                                      \
+    __GLpixelPackMode saved;                                                                \
+    GLubyte *tmp;                                                                           \
+    if (!__glPacked12Type(type, NULL)) { call_same; return; }                               \
+    if (!__glPacked12FormatOK(format, type)) return;                                        \
+    if (buf == NULL || (w) <= 0 || (h) <= 0) { call_bytes; return; }                        \
+    tmp = __glPacked12Unpack(gc, (w), (h), type, buf, &saved);                              \
+    if (tmp == NULL) return;                                                                \
+    call_tmp;                                                                               \
+    __glPacked12Done(gc, tmp, &saved);
+
+void __stdcall __glsstim_TexImage1D(GLenum target, GLint lod, GLint components, GLsizei length, GLint border, GLenum format,
+                              GLenum type, const GLvoid *buf)
+{
+    PACKED12_TEX(length, 1,
+                 __glsstim_TexImage1D_base(target, lod, components, length, border, format, type, buf),
+                 __glsstim_TexImage1D_base(target, lod, components, length, border, format, GL_UNSIGNED_BYTE, buf),
+                 __glsstim_TexImage1D_base(target, lod, components, length, border, format, GL_UNSIGNED_BYTE, tmp))
+}
+
+void __stdcall __glsstim_TexImage2D(GLenum target, GLint lod, GLint components, GLsizei w, GLsizei h, GLint border,
+                              GLenum format, GLenum type, const GLvoid *buf)
+{
+    PACKED12_TEX(w, h,
+                 __glsstim_TexImage2D_base(target, lod, components, w, h, border, format, type, buf),
+                 __glsstim_TexImage2D_base(target, lod, components, w, h, border, format, GL_UNSIGNED_BYTE, buf),
+                 __glsstim_TexImage2D_base(target, lod, components, w, h, border, format, GL_UNSIGNED_BYTE, tmp))
+}
+
+void __stdcall __glsstim_TexSubImage1D(GLenum target, GLint lod, GLint xoffset, GLint length, GLenum format, GLenum type,
+                                 const GLvoid *buf)
+{
+    PACKED12_TEX(length, 1,
+                 __glsstim_TexSubImage1D_base(target, lod, xoffset, length, format, type, buf),
+                 __glsstim_TexSubImage1D_base(target, lod, xoffset, length, format, GL_UNSIGNED_BYTE, buf),
+                 __glsstim_TexSubImage1D_base(target, lod, xoffset, length, format, GL_UNSIGNED_BYTE, tmp))
+}
+
+void __stdcall __glsstim_TexSubImage2D(GLenum target, GLint lod, GLint xoffset, GLint yoffset, GLsizei w, GLsizei h,
+                                 GLenum format, GLenum type, const GLvoid *buf)
+{
+    PACKED12_TEX(w, h,
+                 __glsstim_TexSubImage2D_base(target, lod, xoffset, yoffset, w, h, format, type, buf),
+                 __glsstim_TexSubImage2D_base(target, lod, xoffset, yoffset, w, h, format, GL_UNSIGNED_BYTE, buf),
+                 __glsstim_TexSubImage2D_base(target, lod, xoffset, yoffset, w, h, format, GL_UNSIGNED_BYTE, tmp))
+}
+#undef PACKED12_TEX

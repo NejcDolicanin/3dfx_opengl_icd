@@ -50,7 +50,7 @@ typedef struct { GLfloat v[3]; } __GLVec3;
 #define __GL_LINE_ENABLES_ICD           0x00000300
 #define __GL_POLYGON_ENABLES_ICD        0x001c3800
 #define __GL_AUTO_NORMAL_ENABLE_ICD     0x00020000
-#define __GL_NORMALIZE_ENABLE_ICD       0x00010000
+#define __GL_NORMALIZE_ENABLE_ICD       0x0c010000      /* with the 1.2 rescale-normal bits (glsi.h) */
 /* ---- glReadBuffer (SI px_api.c; GL_FRONT on a windowed surface makes the front buffer readable) - */
 extern GLenum __fastcall hwMapDepthFunc(GLenum func, GLenum dir, GLenum last);
 extern void __stdcall __glsstim_Fogfv(GLenum p, const GLfloat pv[]);

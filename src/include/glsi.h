@@ -378,6 +378,16 @@ enum { __GL_NOT_IN_BEGIN = 0, __GL_IN_BEGIN = 1, __GL_NEED_VALIDATE = 2 };
 /* bits 22, 23 and 25 are the ICD's extension caps (not in the SI); no RESCALE_NORMAL */
 #define __GL_CULL_VERTEX_ENABLE         (1 << 24)
 #define __GL_SHARED_TEXTURE_PALETTE_EXT_ENABLE (1 << 25) /* ICD: GL_SHARED_TEXTURE_PALETTE_EXT (0x81fb) */
+/* OpenGL 1.2 GL_RESCALE_NORMAL (not in the original).  Rescaling is done by normalising, which the specification
+** allows and which gives the same normals for unit-length input: __GL_NORMALIZE_ENABLE is what the lighting code
+** tests and is on while either the application's GL_NORMALIZE (bit 27) or its GL_RESCALE_NORMAL (bit 26) is */
+#define __GL_RESCALE_NORMAL_ENABLE      (1 << 26)
+#define __GL_NORMALIZE_USER_ENABLE      (1 << 27)
+#define __GL_NORMALIZE_SOURCES          (__GL_RESCALE_NORMAL_ENABLE | __GL_NORMALIZE_USER_ENABLE)
+#define GL_RESCALE_NORMAL_12            0x803A
+/* OpenGL 1.2 GL_TEXTURE_3D enable of unit 0 / unit 1: kept for glIsEnabled only (gl_tex.c __glTex3D*) */
+#define __GL_TEXTURE_3D_UNIT0_ENABLE    (1 << 28)
+#define GL_TEXTURE_3D_12                0x806F
 /* enables.texture[unit] (gc+0x520): no 3D texture, so the SI's texgen bits sit one lower */
 #define __GL_TEXTURE_1D_ENABLE          (1 << 0)
 #define __GL_TEXTURE_2D_ENABLE          (1 << 1)

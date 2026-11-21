@@ -101,7 +101,14 @@ void __stdcall __glsstim_Enable(GLenum cap)
         gc->state.enables.general |= __GL_COLOR_LOGIC_OP_ENABLE;
         break;
       case GL_NORMALIZE:
-        gc->state.enables.general |= __GL_NORMALIZE_ENABLE;
+        gc->state.enables.general |= __GL_NORMALIZE_USER_ENABLE | __GL_NORMALIZE_ENABLE;
+        break;
+      case GL_RESCALE_NORMAL_12:
+        if (g_glVersion < 12) {
+            __glSetError(GL_INVALID_ENUM);
+            return;
+        }
+        gc->state.enables.general |= __GL_RESCALE_NORMAL_ENABLE | __GL_NORMALIZE_ENABLE;
         break;
       case GL_SCISSOR_TEST:
         if (gc->state.enables.general & __GL_SCISSOR_TEST_ENABLE) return;
@@ -136,6 +143,13 @@ void __stdcall __glsstim_Enable(GLenum cap)
       case GL_AUTO_NORMAL:
         gc->state.enables.general |= __GL_AUTO_NORMAL_ENABLE;
         break;
+      case GL_TEXTURE_3D_12:                        /* OpenGL 1.2: kept for glIsEnabled, not drawn */
+        if (g_glVersion < 12) {
+            __glSetError(GL_INVALID_ENUM);
+            return;
+        }
+        gc->state.enables.general |= __GL_TEXTURE_3D_UNIT0_ENABLE << gc->fx.activeTexture;
+        return;
       case GL_MAP1_COLOR_4: case GL_MAP1_INDEX: case GL_MAP1_NORMAL:
       case GL_MAP1_TEXTURE_COORD_1: case GL_MAP1_TEXTURE_COORD_2:
       case GL_MAP1_TEXTURE_COORD_3: case GL_MAP1_TEXTURE_COORD_4:
@@ -313,7 +327,18 @@ void __stdcall __glsstim_Disable(GLenum cap)
         gc->state.enables.general &= ~__GL_COLOR_LOGIC_OP_ENABLE;
         break;
       case GL_NORMALIZE:
-        gc->state.enables.general &= ~__GL_NORMALIZE_ENABLE;
+        gc->state.enables.general &= ~__GL_NORMALIZE_USER_ENABLE;
+        if (!(gc->state.enables.general & __GL_NORMALIZE_SOURCES))
+            gc->state.enables.general &= ~__GL_NORMALIZE_ENABLE;
+        break;
+      case GL_RESCALE_NORMAL_12:
+        if (g_glVersion < 12) {
+            __glSetError(GL_INVALID_ENUM);
+            return;
+        }
+        gc->state.enables.general &= ~__GL_RESCALE_NORMAL_ENABLE;
+        if (!(gc->state.enables.general & __GL_NORMALIZE_SOURCES))
+            gc->state.enables.general &= ~__GL_NORMALIZE_ENABLE;
         break;
       case GL_SCISSOR_TEST:
         gc->state.enables.general &= ~__GL_SCISSOR_TEST_ENABLE;
@@ -347,6 +372,13 @@ void __stdcall __glsstim_Disable(GLenum cap)
       case GL_AUTO_NORMAL:
         gc->state.enables.general &= ~__GL_AUTO_NORMAL_ENABLE;
         break;
+      case GL_TEXTURE_3D_12:
+        if (g_glVersion < 12) {
+            __glSetError(GL_INVALID_ENUM);
+            return;
+        }
+        gc->state.enables.general &= ~(__GL_TEXTURE_3D_UNIT0_ENABLE << gc->fx.activeTexture);
+        return;
       case GL_MAP1_COLOR_4: case GL_MAP1_INDEX: case GL_MAP1_NORMAL:
       case GL_MAP1_TEXTURE_COORD_1: case GL_MAP1_TEXTURE_COORD_2:
       case GL_MAP1_TEXTURE_COORD_3: case GL_MAP1_TEXTURE_COORD_4:

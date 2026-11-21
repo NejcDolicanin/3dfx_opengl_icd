@@ -14,13 +14,14 @@
 #define DISTANCE_ATTENUATION_EXT        0x8129
 
 /* ---- s_size.c-style parameter counts ---- */
-/* 690e5130 -- __glLightModelfv_size (no GL_LIGHT_MODEL_COLOR_CONTROL in the ICD) */
+/* 690e5130 -- __glLightModelfv_size */
 GLint __fastcall __glLightModelfv_size(GLenum pname)
 {
     switch (pname) {
       case GL_LIGHT_MODEL_AMBIENT:		return 4;
       case GL_LIGHT_MODEL_LOCAL_VIEWER:		return 1;
       case GL_LIGHT_MODEL_TWO_SIDE:		return 1;
+      case 0x81F8:				return 1;	/* GL_LIGHT_MODEL_COLOR_CONTROL (OpenGL 1.2) */
       default:
 	return -1;
     }

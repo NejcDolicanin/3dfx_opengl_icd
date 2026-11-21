@@ -186,6 +186,21 @@ void __fastcall hwReadDepthPrecision(__GLcontext *gc)
   }
 }
 
+/* The OpenGL version the driver reports and offers, as major * 10 + minor: 11 (the original's 1.1) or 12.
+** FX_GL_VERSION ("1.1" / "1.2") from the registry or environment picks it; 1.1 when unset.  With 1.1 the newer entry
+** points are not handed out (wglGetProcAddressTable) and their extensions are not listed, so a game stays on its
+** 1.1 paths */
+GLint g_glVersion = 11;
+
+static void hwReadGLVersion(void)
+{
+    const char *s = hwRegOrEnvString("FX_GL_VERSION");
+
+    g_glVersion = 11;
+    if (s != NULL && s[0] == '1' && s[1] == '.' && s[2] >= '2' && s[2] <= '9')
+        g_glVersion = 12;               /* the highest one there is so far */
+}
+
 /* 6902a436 (size 841) -- hwBuildGetStrings: build the glGetString strings: vendor, version, renderer
 ** ("3Dfx/<hardware> [SLI]/<n> TMU(s)/<mem> MB[ SGRAM| SDRAM][/3DNow!][/KNI]/ICD|stand-alone (date)") and the GL and
 ** WGL extension strings */
@@ -194,7 +209,8 @@ void __fastcall hwBuildGetStrings(__GLcontext *gc)
     const char *hw;
 
     gc->constants.vendor = (const GLubyte *)"3Dfx Interactive Inc.";
-    gc->constants.version = (const GLubyte *)"1.1.0";
+    hwReadGLVersion();
+    gc->constants.version = (const GLubyte *)(g_glVersion >= 12 ? "1.2.0" : "1.1.0");
     hw = grGetString(GR_HARDWARE);
     gc->constants.renderer = (const GLubyte *)__GL_MALLOC(gc, 0x100);
     if (gc->constants.renderer != NULL) {
@@ -242,6 +258,8 @@ void __fastcall hwBuildGetStrings(__GLcontext *gc)
         if (gc->fx.numTMUs > 1)
             q += sprintf(q, "GL_ARB_multitexture ");
         q += sprintf(q, "GL_EXT_abgr GL_EXT_bgra ");
+        if (g_glVersion >= 12)
+            q += sprintf(q, "GL_EXT_draw_range_elements ");
         if (gc->hwcx.hasAlphaBlendExt)
             q += sprintf(q, "GL_EXT_blend_subtract GL_NV_blend_square ");
         q += sprintf(q, "GL_EXT_clip_volume_hint GL_EXT_compiled_vertex_array GL_EXT_packed_pixels "
