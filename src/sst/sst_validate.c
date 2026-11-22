@@ -431,7 +431,8 @@ GLboolean __fastcall hwBlendFactors(__GLcontext *gc, GLenum sfactor, GLenum dfac
 {
     GLboolean same = gc->hwcx.hasAlphaBlendExt != 0;
 
-    switch (sfactor) {
+    if (__glBlendConstFactor(sfactor, src)) {           /* the 1.4 constant factors: ONE or ZERO (gl_newer.c) */
+    } else switch (sfactor) {
       case GL_ONE: *src = GR_BLEND_ONE; break;
       case GL_ZERO: *src = GR_BLEND_ZERO; break;
       case GL_SRC_ALPHA: *src = GR_BLEND_SRC_ALPHA; break;
@@ -445,7 +446,8 @@ GLboolean __fastcall hwBlendFactors(__GLcontext *gc, GLenum sfactor, GLenum dfac
       case GL_ONE_MINUS_SRC_COLOR: *src = same ? GR_BLEND_ONE_MINUS_SAME_COLOR_EXT : GR_BLEND_ONE; break;
       default: return GL_FALSE;
     }
-    switch (dfactor) {
+    if (__glBlendConstFactor(dfactor, dst)) {
+    } else switch (dfactor) {
       case GL_ONE: *dst = GR_BLEND_ONE; break;
       case GL_ZERO: *dst = GR_BLEND_ZERO; break;
       case GL_SRC_COLOR: *dst = GR_BLEND_SRC_COLOR; break;

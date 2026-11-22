@@ -11,7 +11,7 @@
 #include <glide.h>
 
 /* 6901dce0 (size 2105) -- __glsstim_Enable: glEnable */
-void __stdcall __glsstim_Enable(GLenum cap)
+static void __stdcall __glsstim_Enable_base(GLenum cap)
 {
     __GL_SETUP_NOT_IN_BEGIN();
 
@@ -227,7 +227,7 @@ void __stdcall __glsstim_Enable(GLenum cap)
 }
 
 /* 6901e730 (size 2214) -- __glsstim_Disable: glDisable */
-void __stdcall __glsstim_Disable(GLenum cap)
+static void __stdcall __glsstim_Disable_base(GLenum cap)
 {
     __GL_SETUP_NOT_IN_BEGIN();
 
@@ -453,4 +453,17 @@ void __stdcall __glsstim_Disable(GLenum cap)
         break;
     }
     __GL_DELAY_VALIDATE(gc);
+}
+
+/* glEnable / glDisable: the caps of OpenGL 1.3 / 1.4 first (gl_newer.c), then the function above */
+void __stdcall __glsstim_Enable(GLenum cap)
+{
+    if (__glEnableNewer(__glCurrentGC(), &cap, GL_TRUE)) return;
+    __glsstim_Enable_base(cap);
+}
+
+void __stdcall __glsstim_Disable(GLenum cap)
+{
+    if (__glEnableNewer(__glCurrentGC(), &cap, GL_FALSE)) return;
+    __glsstim_Disable_base(cap);
 }

@@ -176,11 +176,13 @@
     }                                                                           \
     switch (params->sWrapMode) {                                                \
       case GL_REPEAT: GRSET(f + 1, 0, 0, cbit); break;                      \
-      case GL_CLAMP: case GL_CLAMP_TO_EDGE: GRSET(f + 1, 0, 1, cbit); break; \
+      case GL_CLAMP: case GL_CLAMP_TO_EDGE: case 0x812D: GRSET(f + 1, 0, 1, cbit); break; \
+      case 0x8370: GRSET(f + 1, 0, hwTexMirrorMode(), cbit); break;      \
     }                                                                           \
     switch (params->tWrapMode) {                                                \
       case GL_REPEAT: GRSET(f + 1, 1, 0, cbit); break;                      \
-      case GL_CLAMP: case GL_CLAMP_TO_EDGE: GRSET(f + 1, 1, 1, cbit); break; \
+      case GL_CLAMP: case GL_CLAMP_TO_EDGE: case 0x812D: GRSET(f + 1, 1, 1, cbit); break; \
+      case 0x8370: GRSET(f + 1, 1, hwTexMirrorMode(), cbit); break;      \
     }
 /************************************************************************/
 #define TEX_FX(x)               ((__GLtextureFxICD *)(x))

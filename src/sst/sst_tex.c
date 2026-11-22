@@ -80,6 +80,7 @@ extern float __fastcall sstTex_Clampf(GLuint ecx_unused, GLuint edx_unused, floa
 extern void __stdcall __glsstim_TexParameterfv(GLenum target, GLenum pname, const GLfloat pv[]);
 extern void __stdcall __glsstim_TexParameteriv(GLenum target, GLenum pname, const GLint pv[]);
 extern void __stdcall __glsstim_TexEnvfv(GLenum target, GLenum pname, const GLfloat pv[]);
+extern void __stdcall __glsstim_TexEnviv(GLenum target, GLenum pname, const GLint *pv);
 
 /* 6904d660 -- __glSSTExtractTexelRGBA8: s_texextr.c __glExtractTexelRGBA8 for the hardware texture images: the
 ** texels are stored B, G, R, A */
@@ -156,6 +157,9 @@ void __stdcall __glsstim_TexParameterfv(GLenum target, GLenum pname, const GLflo
           case GL_REPEAT:
           case GL_CLAMP:
           case GL_CLAMP_TO_EDGE:
+          case 0x812D:                  /* GL_CLAMP_TO_BORDER (1.3), GL_MIRRORED_REPEAT (1.4) */
+          case 0x8370:
+            if (!__glWrapModeNewer(e)) goto bad_enum;
             params->sWrapMode = e;
             tex->params.sWrapMode = e;
             break;
@@ -168,6 +172,9 @@ void __stdcall __glsstim_TexParameterfv(GLenum target, GLenum pname, const GLflo
           case GL_REPEAT:
           case GL_CLAMP:
           case GL_CLAMP_TO_EDGE:
+          case 0x812D:                  /* GL_CLAMP_TO_BORDER (1.3), GL_MIRRORED_REPEAT (1.4) */
+          case 0x8370:
+            if (!__glWrapModeNewer(e)) goto bad_enum;
             params->tWrapMode = e;
             tex->params.tWrapMode = e;
             break;
@@ -246,6 +253,7 @@ void __stdcall __glsstim_TexParameterf(GLenum target, GLenum pname, GLfloat para
       case GL_TEXTURE_PRIORITY:
       case 0x813A: case 0x813B:               /* GL_TEXTURE_MIN_LOD / MAX_LOD (OpenGL 1.2) */
       case 0x813C: case 0x813D:               /* GL_TEXTURE_BASE_LEVEL / MAX_LEVEL */
+      case 0x8191: case 0x884B: case 0x884C: case 0x884D:    /* OpenGL 1.4: generate mipmap, depth texture modes */
         __glsstim_TexParameterfv(target, pname, &param);
         return;
       default:
@@ -266,6 +274,7 @@ void __stdcall __glsstim_TexParameteri(GLenum target, GLenum pname, GLint param)
       case GL_TEXTURE_PRIORITY:
       case 0x813A: case 0x813B:               /* GL_TEXTURE_MIN_LOD / MAX_LOD (OpenGL 1.2) */
       case 0x813C: case 0x813D:               /* GL_TEXTURE_BASE_LEVEL / MAX_LEVEL */
+      case 0x8191: case 0x884B: case 0x884C: case 0x884D:    /* OpenGL 1.4: generate mipmap, depth texture modes */
         __glsstim_TexParameteriv(target, pname, &param);
         return;
       default:
@@ -276,7 +285,7 @@ void __stdcall __glsstim_TexParameteri(GLenum target, GLenum pname, GLint param)
 
 /* 6905d4f0 -- __glsstim_TexEnvfv: __glim_TexEnvfv (s_tex.c), the hardware module's copy of 6909d680 that also
 ** drops the unit's cached hardware texture (hwcx.unitTexture[unit] = -1); GL_COMBINE_EXT is accepted here only */
-void __stdcall __glsstim_TexEnvfv(GLenum target, GLenum pname, const GLfloat pv[])
+static void __stdcall __glsstim_TexEnvfv_base(GLenum target, GLenum pname, const GLfloat pv[])
 {
     __GLtextureEnvState *tes;
     GLenum e;
@@ -451,7 +460,7 @@ void __stdcall __glsstim_TexEnvfv(GLenum target, GLenum pname, const GLfloat pv[
 }
 
 /* 6905da40 (size 119) -- __glsstim_TexEnvf: glTexEnvf (scalar parameters only) */
-void __stdcall __glsstim_TexEnvf(GLenum target, GLenum pname, GLfloat param)
+static void __stdcall __glsstim_TexEnvf_base(GLenum target, GLenum pname, GLfloat param)
 {
     switch (pname) {
       case GL_TEXTURE_ENV_MODE:
@@ -470,7 +479,7 @@ void __stdcall __glsstim_TexEnvf(GLenum target, GLenum pname, GLfloat param)
 }
 
 /* 6905dae0 (size 1201) -- __glsstim_TexEnviv: glTexEnviv */
-void __stdcall __glsstim_TexEnviv(GLenum target, GLenum pname, const GLint *pv)
+static void __stdcall __glsstim_TexEnviv_base(GLenum target, GLenum pname, const GLint *pv)
 {
     __GLtextureEnvState *tes;
     GLint v;
@@ -675,7 +684,7 @@ void __stdcall __glsstim_TexEnviv(GLenum target, GLenum pname, const GLint *pv)
 }
 
 /* 6905dff0 (size 119) -- __glsstim_TexEnvi: glTexEnvi (scalar parameters only) */
-void __stdcall __glsstim_TexEnvi(GLenum target, GLenum pname, GLint param)
+static void __stdcall __glsstim_TexEnvi_base(GLenum target, GLenum pname, GLint param)
 {
     switch (pname) {
       case GL_TEXTURE_ENV_MODE:
@@ -1241,6 +1250,9 @@ void __stdcall __glsstim_TexParameteriv(GLenum target, GLenum pname, const GLint
           case GL_REPEAT:
           case GL_CLAMP:
           case GL_CLAMP_TO_EDGE:
+          case 0x812D:                  /* GL_CLAMP_TO_BORDER (1.3), GL_MIRRORED_REPEAT (1.4) */
+          case 0x8370:
+            if (!__glWrapModeNewer(e)) goto bad_enum;
             params->sWrapMode = e;
             tex->params.sWrapMode = e;
             break;
@@ -1253,6 +1265,9 @@ void __stdcall __glsstim_TexParameteriv(GLenum target, GLenum pname, const GLint
           case GL_REPEAT:
           case GL_CLAMP:
           case GL_CLAMP_TO_EDGE:
+          case 0x812D:                  /* GL_CLAMP_TO_BORDER (1.3), GL_MIRRORED_REPEAT (1.4) */
+          case 0x8370:
+            if (!__glWrapModeNewer(e)) goto bad_enum;
             params->tWrapMode = e;
             tex->params.tWrapMode = e;
             break;
@@ -1675,7 +1690,7 @@ const __GLtextureFormatICD g_texFmtDXT5 = {                     /* GR_TEXFMT_ARG
     call_tmp;                                                                               \
     __glPacked12Done(gc, tmp, &saved);
 
-void __stdcall __glsstim_TexImage1D(GLenum target, GLint lod, GLint components, GLsizei length, GLint border, GLenum format,
+static void __stdcall __glsstim_TexImage1D_packed(GLenum target, GLint lod, GLint components, GLsizei length, GLint border, GLenum format,
                               GLenum type, const GLvoid *buf)
 {
     PACKED12_TEX(length, 1,
@@ -1684,7 +1699,7 @@ void __stdcall __glsstim_TexImage1D(GLenum target, GLint lod, GLint components, 
                  __glsstim_TexImage1D_base(target, lod, components, length, border, format, GL_UNSIGNED_BYTE, tmp))
 }
 
-void __stdcall __glsstim_TexImage2D(GLenum target, GLint lod, GLint components, GLsizei w, GLsizei h, GLint border,
+static void __stdcall __glsstim_TexImage2D_packed(GLenum target, GLint lod, GLint components, GLsizei w, GLsizei h, GLint border,
                               GLenum format, GLenum type, const GLvoid *buf)
 {
     PACKED12_TEX(w, h,
@@ -1693,7 +1708,7 @@ void __stdcall __glsstim_TexImage2D(GLenum target, GLint lod, GLint components, 
                  __glsstim_TexImage2D_base(target, lod, components, w, h, border, format, GL_UNSIGNED_BYTE, tmp))
 }
 
-void __stdcall __glsstim_TexSubImage1D(GLenum target, GLint lod, GLint xoffset, GLint length, GLenum format, GLenum type,
+static void __stdcall __glsstim_TexSubImage1D_packed(GLenum target, GLint lod, GLint xoffset, GLint length, GLenum format, GLenum type,
                                  const GLvoid *buf)
 {
     PACKED12_TEX(length, 1,
@@ -1702,7 +1717,7 @@ void __stdcall __glsstim_TexSubImage1D(GLenum target, GLint lod, GLint xoffset, 
                  __glsstim_TexSubImage1D_base(target, lod, xoffset, length, format, GL_UNSIGNED_BYTE, tmp))
 }
 
-void __stdcall __glsstim_TexSubImage2D(GLenum target, GLint lod, GLint xoffset, GLint yoffset, GLsizei w, GLsizei h,
+static void __stdcall __glsstim_TexSubImage2D_packed(GLenum target, GLint lod, GLint xoffset, GLint yoffset, GLsizei w, GLsizei h,
                                  GLenum format, GLenum type, const GLvoid *buf)
 {
     PACKED12_TEX(w, h,
@@ -1711,3 +1726,62 @@ void __stdcall __glsstim_TexSubImage2D(GLenum target, GLint lod, GLint xoffset, 
                  __glsstim_TexSubImage2D_base(target, lod, xoffset, yoffset, w, h, format, GL_UNSIGNED_BYTE, tmp))
 }
 #undef PACKED12_TEX
+
+/* glTexEnv: what OpenGL 1.3 / 1.4 add first (gl_newer.c __glTexEnvNewer), then the functions above */
+void __stdcall __glsstim_TexEnvf(GLenum target, GLenum pname, GLfloat param)
+{
+    if (__glTexEnvNewer(target, pname, param)) return;
+    __glsstim_TexEnvf_base(target, pname, param);
+}
+
+void __stdcall __glsstim_TexEnvi(GLenum target, GLenum pname, GLint param)
+{
+    if (__glTexEnvNewer(target, pname, (__GLfloat)param)) return;
+    __glsstim_TexEnvi_base(target, pname, param);
+}
+
+void __stdcall __glsstim_TexEnvfv(GLenum target, GLenum pname, const GLfloat pv[])
+{
+    if (__glTexEnvNewer(target, pname, pv[0])) return;
+    __glsstim_TexEnvfv_base(target, pname, pv);
+}
+
+void __stdcall __glsstim_TexEnviv(GLenum target, GLenum pname, const GLint *pv)
+{
+    if (__glTexEnvNewer(target, pname, (__GLfloat)pv[0])) return;
+    __glsstim_TexEnviv_base(target, pname, pv);
+}
+
+
+/* glTexImage2D / glTexSubImage2D as called: what OpenGL 1.3 / 1.4 add around the functions above (gl_newer.c): cube
+** map faces are accepted and dropped, depth textures become luminance ones, GL_GENERATE_MIPMAP builds the levels */
+void __stdcall __glsstim_TexImage2D(GLenum target, GLint lod, GLint components, GLsizei w, GLsizei h, GLint border,
+                              GLenum format, GLenum type, const GLvoid *buf)
+{
+    if (__glTexImage2DNewer(target, &components, &format)) return;
+    __glsstim_TexImage2D_packed(target, lod, components, w, h, border, format, type, buf);
+    if (lod == 0 && buf != NULL) __glAutoMipmap(__glCurrentGC(), target);
+}
+
+void __stdcall __glsstim_TexSubImage2D(GLenum target, GLint lod, GLint xoffset, GLint yoffset, GLsizei w, GLsizei h,
+                                 GLenum format, GLenum type, const GLvoid *buf)
+{
+    if (__glTexImage2DNewer(target, NULL, &format)) return;
+    __glsstim_TexSubImage2D_packed(target, lod, xoffset, yoffset, w, h, format, type, buf);
+    if (lod == 0) __glAutoMipmap(__glCurrentGC(), target);
+}
+
+/* the 1D ones: GL_GENERATE_MIPMAP (OpenGL 1.4) */
+void __stdcall __glsstim_TexImage1D(GLenum target, GLint lod, GLint components, GLsizei length, GLint border, GLenum format,
+                              GLenum type, const GLvoid *buf)
+{
+    __glsstim_TexImage1D_packed(target, lod, components, length, border, format, type, buf);
+    if (lod == 0 && buf != NULL) __glAutoMipmap(__glCurrentGC(), target);
+}
+
+void __stdcall __glsstim_TexSubImage1D(GLenum target, GLint lod, GLint xoffset, GLint length, GLenum format, GLenum type,
+                                 const GLvoid *buf)
+{
+    __glsstim_TexSubImage1D_packed(target, lod, xoffset, length, format, type, buf);
+    if (lod == 0) __glAutoMipmap(__glCurrentGC(), target);
+}

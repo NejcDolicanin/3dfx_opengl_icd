@@ -186,8 +186,8 @@ void __fastcall hwReadDepthPrecision(__GLcontext *gc)
   }
 }
 
-/* The OpenGL version the driver reports and offers, as major * 10 + minor: 11 (the original's 1.1) or 12.
-** FX_GL_VERSION ("1.1" / "1.2") from the registry or environment picks it; 1.1 when unset.  With 1.1 the newer entry
+/* The OpenGL version the driver reports and offers, as major * 10 + minor: 11 (the original's 1.1) to 14.
+** FX_GL_VERSION ("1.1" .. "1.5") from the registry or environment picks it; 1.1 when unset.  With 1.1 the newer entry
 ** points are not handed out (wglGetProcAddressTable) and their extensions are not listed, so a game stays on its
 ** 1.1 paths */
 GLint g_glVersion = 11;
@@ -198,7 +198,7 @@ static void hwReadGLVersion(void)
 
     g_glVersion = 11;
     if (s != NULL && s[0] == '1' && s[1] == '.' && s[2] >= '2' && s[2] <= '9')
-        g_glVersion = 12;               /* the highest one there is so far */
+        g_glVersion = s[2] >= '5' ? 15 : 10 + (s[2] - '0');        /* 1.5 is the highest one there is */
 }
 
 /* 6902a436 (size 841) -- hwBuildGetStrings: build the glGetString strings: vendor, version, renderer
@@ -210,7 +210,8 @@ void __fastcall hwBuildGetStrings(__GLcontext *gc)
 
     gc->constants.vendor = (const GLubyte *)"3Dfx Interactive Inc.";
     hwReadGLVersion();
-    gc->constants.version = (const GLubyte *)(g_glVersion >= 12 ? "1.2.0" : "1.1.0");
+    gc->constants.version = (const GLubyte *)(g_glVersion >= 15 ? "1.5.0" : g_glVersion == 14 ? "1.4.0" : g_glVersion == 13 ? "1.3.0" :
+                                              g_glVersion == 12 ? "1.2.0" : "1.1.0");
     hw = grGetString(GR_HARDWARE);
     gc->constants.renderer = (const GLubyte *)__GL_MALLOC(gc, 0x100);
     if (gc->constants.renderer != NULL) {
@@ -260,6 +261,22 @@ void __fastcall hwBuildGetStrings(__GLcontext *gc)
         q += sprintf(q, "GL_EXT_abgr GL_EXT_bgra ");
         if (g_glVersion >= 12)
             q += sprintf(q, "GL_EXT_draw_range_elements ");
+        /* the extensions of 1.3 / 1.4 that the hardware or the CPU really does (gl_newer.c); the string must stay
+        ** well under the 1024 bytes of its buffer */
+        if (g_glVersion >= 13) {
+            q += sprintf(q, "GL_ARB_transpose_matrix GL_ARB_texture_env_add ");
+            if (gc->hwcx.hasTBuffer)
+                q += sprintf(q, "GL_ARB_multisample ");
+        }
+        if (g_glVersion >= 14) {
+            q += sprintf(q, "GL_EXT_texture_lod_bias GL_SGIS_generate_mipmap GL_EXT_multi_draw_arrays GL_ARB_window_pos ");
+            if (gc->hwcx.hasAlphaBlendExt)
+                q += sprintf(q, "GL_EXT_blend_func_separate ");
+            if (hwTexMirrorMode() != 0)
+                q += sprintf(q, "GL_ARB_texture_mirrored_repeat ");
+        }
+        if (g_glVersion >= 15)
+            q += sprintf(q, "GL_ARB_vertex_buffer_object ");
         if (gc->hwcx.hasAlphaBlendExt)
             q += sprintf(q, "GL_EXT_blend_subtract GL_NV_blend_square ");
         q += sprintf(q, "GL_EXT_clip_volume_hint GL_EXT_compiled_vertex_array GL_EXT_packed_pixels "

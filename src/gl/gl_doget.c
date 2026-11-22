@@ -1355,6 +1355,14 @@ void __fastcall __glDoGet(GLenum sq, void *result, GLint type, const char *procN
 	*ip++ = 12288;
 	break;
       default:
+	{   /* the state of OpenGL 1.3 / 1.4 (gl_newer.c) */
+	    GLint ni = 0, nf = 0;
+	    if (__glGetNewer(gc, sq, ip, fp, &ni, &nf)) {
+		ip += ni;
+		fp += nf;
+		break;
+	    }
+	}
 	__glSetError(GL_INVALID_ENUM);
 	return;
       case 0x86B4:

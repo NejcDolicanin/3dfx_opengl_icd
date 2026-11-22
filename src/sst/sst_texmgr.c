@@ -287,7 +287,8 @@ GLuint __fastcall MakeResident(__GLcontext *gc, __GLtextureFxICD *tex, GLuint a,
     if ((lvl0->border > 0 ||
          tex->t.params.borderColor.r != g_defaultBorderR || tex->t.params.borderColor.g != g_defaultBorderG ||
          tex->t.params.borderColor.b != g_defaultBorderB || tex->t.params.borderColor.a != g_defaultBorderA) &&
-        (tex->t.params.sWrapMode != GL_CLAMP_TO_EDGE || tex->t.params.tWrapMode != GL_CLAMP_TO_EDGE)) {
+        ((tex->t.params.sWrapMode != GL_CLAMP_TO_EDGE && tex->t.params.sWrapMode != 0x812D) ||     /* (or CLAMP_TO_BORDER) */
+         (tex->t.params.tWrapMode != GL_CLAMP_TO_EDGE && tex->t.params.tWrapMode != 0x812D))) {
         TEX_SLOT(tex->t.hwHandle, tmu) = 0;
         return 0;
     }

@@ -858,6 +858,601 @@ static void page_drawrange(void)
     glerr();
 }
 
+/* =====================================================================================================================
+** OpenGL 1.3
+*/
+#define GL_TEXTURE0_                    0x84C0
+#define GL_TEXTURE1_                    0x84C1
+#define GL_ACTIVE_TEXTURE_              0x84E0
+#define GL_MAX_TEXTURE_UNITS_           0x84E2
+#define GL_TRANSPOSE_MODELVIEW_MATRIX_  0x84E3
+#define GL_MULTISAMPLE_                 0x809D
+#define GL_SAMPLE_BUFFERS_              0x80A8
+#define GL_SAMPLES_                     0x80A9
+#define GL_SAMPLE_COVERAGE_VALUE_       0x80AA
+#define GL_TEXTURE_CUBE_MAP_            0x8513
+#define GL_MAX_CUBE_MAP_TEXTURE_SIZE_   0x851C
+#define GL_CLAMP_TO_BORDER_             0x812D
+#define GL_COMBINE_                     0x8570
+#define GL_COMBINE_RGB_                 0x8571
+#define GL_SUBTRACT_                    0x84E7
+#define GL_DOT3_RGB_                    0x86AE
+#define GL_COMPRESSED_RGB_              0x84ED
+#define GL_TEXTURE_COMPRESSED_          0x86A1
+typedef void (APIENTRY *PFN_e)(GLenum);
+typedef void (APIENTRY *PFN_eff)(GLenum, GLfloat, GLfloat);
+typedef void (APIENTRY *PFN_fv)(const GLfloat *);
+typedef void (APIENTRY *PFN_fb)(GLclampf, GLboolean);
+
+static void solidTex(GLuint *tex, GLint ifmt, int r, int g, int b)
+{
+    static GLubyte img[16 * 16 * 4];
+    int i;
+    for (i = 0; i < 256; i++) { img[i * 4] = (GLubyte)r; img[i * 4 + 1] = (GLubyte)g; img[i * 4 + 2] = (GLubyte)b; img[i * 4 + 3] = 255; }
+    if (*tex == 0) glGenTextures(1, tex);
+    glBindTexture(GL_TEXTURE_2D, *tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    glTexImage2D(GL_TEXTURE_2D, 0, ifmt, 16, 16, 0, GL_RGBA, GL_UNSIGNED_BYTE, img);
+}
+
+static void page_gl13(void)
+{
+    static const char *procs[] = { "glActiveTexture", "glClientActiveTexture", "glMultiTexCoord2f", "glMultiTexCoord4fv",
+        "glCompressedTexImage2D", "glGetCompressedTexImage", "glSampleCoverage", "glLoadTransposeMatrixf",
+        "glMultTransposeMatrixd" };
+    static GLuint texA, texB, texC;
+    PFN_e activeTexture = (PFN_e)getproc("glActiveTexture");
+    PFN_eff multiTexCoord2f = (PFN_eff)getproc("glMultiTexCoord2f");
+    GLubyte px[4];
+    GLint v[4], units = 1;
+    GLfloat f[16];
+    int i, missing = 0, y = g_h - 140;
+
+    ortho();
+    glDisable(GL_LIGHTING); glDisable(GL_DEPTH_TEST); glDisable(GL_BLEND);
+    if (g_ver < 13) {
+        if (g_checking) {
+            info("the driver reports %d.%d: 1.3 must not be offered", g_ver / 10, g_ver % 10);
+            check(activeTexture == NULL, "glActiveTexture (core name) is not handed out");
+            glerr();
+            glEnable(GL_MULTISAMPLE_);
+            check(strcmp(glerr(), "GL_INVALID_ENUM") == 0, "glEnable(GL_MULTISAMPLE) gives GL_INVALID_ENUM");
+        }
+        return;
+    }
+    if (g_checking) {
+        PFN_fv loadT = (PFN_fv)getproc("glLoadTransposeMatrixf");
+        PFN_fb sampleCoverage = (PFN_fb)getproc("glSampleCoverage");
+        static const GLfloat rowMajor[16] = { 1, 0, 0, 5,  0, 1, 0, 6,  0, 0, 1, 7,  0, 0, 0, 1 };
+
+        for (i = 0; i < sizeof(procs) / sizeof(procs[0]); i++)
+            if (getproc(procs[i]) == NULL) { missing++; info("  missing: %s", procs[i]); }
+        check(missing == 0, "the 1.3 entry points are handed out (%d missing)", missing);
+        glerr();
+        if (loadT != NULL) {
+            glMatrixMode(GL_MODELVIEW); glPushMatrix();
+            loadT(rowMajor);
+            glGetFloatv(GL_MODELVIEW_MATRIX, f);
+            check(f[12] == 5 && f[13] == 6 && f[14] == 7, "glLoadTransposeMatrixf: translation lands in elements 12..14");
+            memset(f, 0, sizeof(f));
+            glGetFloatv(GL_TRANSPOSE_MODELVIEW_MATRIX_, f);
+            check(*glerr() == 0 && f[3] == 5 && f[7] == 6 && f[11] == 7, "GL_TRANSPOSE_MODELVIEW_MATRIX gives it back");
+            glPopMatrix();
+        }
+        v[0] = v[1] = -1;
+        glGetIntegerv(GL_SAMPLE_BUFFERS_, v); glGetIntegerv(GL_SAMPLES_, v + 1);
+        check(*glerr() == 0 && v[0] >= 0 && v[1] >= 0, "GL_SAMPLE_BUFFERS = %d, GL_SAMPLES = %d", v[0], v[1]);
+        check(glIsEnabled(GL_MULTISAMPLE_) && *glerr() == 0, "GL_MULTISAMPLE starts enabled");
+        if (sampleCoverage != NULL) {
+            sampleCoverage(0.5f, GL_TRUE);
+            f[0] = 0; glGetFloatv(GL_SAMPLE_COVERAGE_VALUE_, f);
+            check(*glerr() == 0 && f[0] == 0.5f, "glSampleCoverage value reads back (%g)", f[0]);
+            sampleCoverage(1.0f, GL_FALSE);
+        }
+        v[0] = 0; glGetIntegerv(GL_MAX_CUBE_MAP_TEXTURE_SIZE_, v);
+        check(*glerr() == 0 && v[0] >= 16, "GL_MAX_CUBE_MAP_TEXTURE_SIZE = %d", v[0]);
+        glEnable(GL_TEXTURE_CUBE_MAP_);
+        check(*glerr() == 0 && glIsEnabled(GL_TEXTURE_CUBE_MAP_), "GL_TEXTURE_CUBE_MAP can be enabled");
+        glDisable(GL_TEXTURE_CUBE_MAP_);
+        solidTex(&texC, GL_RGBA, 255, 0, 255);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_);
+        v[0] = 0; glGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, v);
+        check(*glerr() == 0 && v[0] == GL_CLAMP_TO_BORDER_, "GL_CLAMP_TO_BORDER is accepted and reads back");
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE_);
+        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB_, GL_SUBTRACT_);
+        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB_, GL_DOT3_RGB_);
+        check(*glerr() == 0, "combine modes GL_SUBTRACT and GL_DOT3_RGB are accepted");
+        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB_, GL_MODULATE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+        glerr();
+    }
+    glGetIntegerv(GL_MAX_TEXTURE_UNITS_, &units);
+    glerr();
+    /* quad 1: a texture given as GL_COMPRESSED_RGB */
+    solidTex(&texC, GL_COMPRESSED_RGB_, 255, 0, 255);
+    if (g_checking) {
+        const char *e = glerr();
+        v[0] = 0; glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_COMPRESSED_, v);
+        check(*e == 0, "a GL_COMPRESSED_RGB texture loads (%s)", *e ? e : v[0] ? "stored compressed" : "stored uncompressed");
+        glerr();
+    }
+    glEnable(GL_TEXTURE_2D);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+    glColor3f(1, 1, 1);
+    quad(10, (float)y, 100, 100);
+    if (g_checking) {
+        readpx(60, y + 50, px);
+        check(nearc(px, 255, 0, 255, fbtol() + 40), "and draws magenta (%d %d %d)", px[0], px[1], px[2]);
+    }
+    /* quad 2: two texture units through the core names: yellow modulated by cyan is green */
+    if (activeTexture != NULL && multiTexCoord2f != NULL && units >= 2) {
+        solidTex(&texA, GL_RGBA, 255, 255, 0);
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+        activeTexture(GL_TEXTURE1_);
+        if (g_checking) {
+            v[0] = 0; glGetIntegerv(GL_ACTIVE_TEXTURE_, v);
+            check(v[0] == GL_TEXTURE1_, "glActiveTexture(GL_TEXTURE1) reads back");
+        }
+        glEnable(GL_TEXTURE_2D);
+        solidTex(&texB, GL_RGBA, 0, 255, 255);
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+        glBegin(GL_QUADS);
+        multiTexCoord2f(GL_TEXTURE0_, 0, 0); multiTexCoord2f(GL_TEXTURE1_, 0, 0); glVertex2f(130, (float)y);
+        multiTexCoord2f(GL_TEXTURE0_, 1, 0); multiTexCoord2f(GL_TEXTURE1_, 1, 0); glVertex2f(230, (float)y);
+        multiTexCoord2f(GL_TEXTURE0_, 1, 1); multiTexCoord2f(GL_TEXTURE1_, 1, 1); glVertex2f(230, (float)(y + 100));
+        multiTexCoord2f(GL_TEXTURE0_, 0, 1); multiTexCoord2f(GL_TEXTURE1_, 0, 1); glVertex2f(130, (float)(y + 100));
+        glEnd();
+        glDisable(GL_TEXTURE_2D);
+        activeTexture(GL_TEXTURE0_);
+        if (g_checking) {
+            readpx(180, y + 50, px);
+            check(nearc(px, 0, 255, 0, fbtol() + 20), "two units through glMultiTexCoord2f: green (%d %d %d)", px[0], px[1], px[2]);
+        }
+    } else if (g_checking) {
+        info("  one texture unit: the two-unit quad is not drawn");
+    }
+    glDisable(GL_TEXTURE_2D);
+    glerr();
+}
+
+/* =====================================================================================================================
+** OpenGL 1.4
+*/
+#define GL_BLEND_DST_RGB_               0x80C8
+#define GL_BLEND_SRC_RGB_               0x80C9
+#define GL_BLEND_DST_ALPHA_             0x80CA
+#define GL_BLEND_SRC_ALPHA_             0x80CB
+#define GL_BLEND_COLOR_                 0x8005
+#define GL_FUNC_ADD_                    0x8006
+#define GL_MIN_                         0x8007
+#define GL_MIRRORED_REPEAT_             0x8370
+#define GL_TEXTURE_FILTER_CONTROL_      0x8500
+#define GL_TEXTURE_LOD_BIAS_            0x8501
+#define GL_GENERATE_MIPMAP_             0x8191
+#define GL_COLOR_SUM_                   0x8458
+#define GL_CURRENT_SECONDARY_COLOR_     0x8459
+#define GL_DEPTH_COMPONENT_             0x1902
+typedef void (APIENTRY *PFN_eeee)(GLenum, GLenum, GLenum, GLenum);
+typedef void (APIENTRY *PFN_ffff)(GLclampf, GLclampf, GLclampf, GLclampf);
+typedef void (APIENTRY *PFN_fff)(GLfloat, GLfloat, GLfloat);
+typedef void (APIENTRY *PFN_ii)(GLint, GLint);
+typedef void (APIENTRY *PFN_multiDrawArrays)(GLenum, const GLint *, const GLsizei *, GLsizei);
+
+static void page_gl14(void)
+{
+    static const char *procs[] = { "glBlendFuncSeparate", "glBlendColor", "glBlendEquation", "glFogCoordf",
+        "glFogCoordPointer", "glPointParameterf", "glPointParameteri", "glMultiDrawArrays", "glMultiDrawElements",
+        "glWindowPos2i", "glWindowPos3fv", "glSecondaryColor3f", "glSecondaryColor3ubv" };
+    static GLuint texHalf, texLevels, texGen;
+    static GLubyte half[4 * 4 * 4], cyan[8 * 8 * 4];
+    static const GLfloat twoQuads[8][2] = { {0, 0}, {40, 0}, {40, 40}, {0, 40},  {60, 0}, {100, 0}, {100, 40}, {60, 40} };
+    static const GLint firsts[2] = { 0, 4 };
+    static const GLsizei counts[2] = { 4, 4 };
+    PFN_eeee blendFuncSeparate = (PFN_eeee)getproc("glBlendFuncSeparate");
+    PFN_ffff blendColor = (PFN_ffff)getproc("glBlendColor");
+    PFN_e blendEquation = (PFN_e)getproc("glBlendEquation");
+    PFN_multiDrawArrays multiDrawArrays = (PFN_multiDrawArrays)getproc("glMultiDrawArrays");
+    PFN_ii windowPos2i = (PFN_ii)getproc("glWindowPos2i");
+    PFN_fff secondaryColor3f = (PFN_fff)getproc("glSecondaryColor3f");
+    GLubyte px[4];
+    GLint v[4];
+    GLfloat f[4];
+    int i, missing = 0, y = g_h - 80;
+
+    ortho();
+    glDisable(GL_LIGHTING); glDisable(GL_DEPTH_TEST); glDisable(GL_BLEND);
+    if (g_ver < 14) {
+        if (g_checking) {
+            info("the driver reports %d.%d: 1.4 must not be offered", g_ver / 10, g_ver % 10);
+            check(blendFuncSeparate == NULL, "glBlendFuncSeparate is not handed out");
+            check(windowPos2i == NULL, "glWindowPos2i is not handed out");
+        }
+        return;
+    }
+    if (g_checking) {
+        for (i = 0; i < sizeof(procs) / sizeof(procs[0]); i++)
+            if (getproc(procs[i]) == NULL) { missing++; info("  missing: %s", procs[i]); }
+        check(missing == 0, "the 1.4 entry points are handed out (%d missing)", missing);
+        glerr();
+        if (blendFuncSeparate != NULL) {
+            blendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
+            glGetIntegerv(GL_BLEND_SRC_RGB_, v); glGetIntegerv(GL_BLEND_DST_RGB_, v + 1);
+            glGetIntegerv(GL_BLEND_SRC_ALPHA_, v + 2); glGetIntegerv(GL_BLEND_DST_ALPHA_, v + 3);
+            check(*glerr() == 0 && v[0] == GL_SRC_ALPHA && v[1] == GL_ONE_MINUS_SRC_ALPHA && v[2] == GL_ONE && v[3] == GL_ZERO,
+                  "glBlendFuncSeparate reads back");
+            glBlendFunc(GL_ONE, GL_ZERO);
+        }
+        if (blendColor != NULL) {
+            blendColor(0.25f, 0.5f, 0.75f, 1.0f);
+            f[0] = f[1] = f[2] = f[3] = 0; glGetFloatv(GL_BLEND_COLOR_, f);
+            check(*glerr() == 0 && f[0] == 0.25f && f[1] == 0.5f && f[2] == 0.75f && f[3] == 1.0f, "glBlendColor reads back");
+        }
+        if (blendEquation != NULL) {
+            blendEquation(GL_MIN_);
+            check(*glerr() == 0, "glBlendEquation(GL_MIN) is accepted");
+            blendEquation(GL_FUNC_ADD_);
+        }
+        if (secondaryColor3f != NULL) {
+            secondaryColor3f(0.5f, 0.25f, 1.0f);
+            f[0] = f[1] = f[2] = 0; glGetFloatv(GL_CURRENT_SECONDARY_COLOR_, f);
+            check(*glerr() == 0 && f[0] == 0.5f && f[1] == 0.25f && f[2] == 1.0f, "glSecondaryColor3f reads back");
+            glEnable(GL_COLOR_SUM_);
+            check(*glerr() == 0 && glIsEnabled(GL_COLOR_SUM_), "GL_COLOR_SUM can be enabled");
+            glDisable(GL_COLOR_SUM_);
+        }
+        {   /* a depth texture */
+            static GLubyte d[16];
+            GLuint t;
+            glGenTextures(1, &t); glBindTexture(GL_TEXTURE_2D, t);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT_, 4, 4, 0, GL_DEPTH_COMPONENT_, GL_UNSIGNED_BYTE, d);
+            check(*glerr() == 0, "a GL_DEPTH_COMPONENT texture is accepted");
+            glDeleteTextures(1, &t);
+        }
+        /* GL_GENERATE_MIPMAP: level 0 half white, half black; the 1x1 level must be grey */
+        {
+            static GLubyte img[16 * 16 * 4], one[4];
+            for (i = 0; i < 256; i++) {
+                GLubyte c = (GLubyte)((i % 16) < 8 ? 255 : 0);
+                img[i * 4] = img[i * 4 + 1] = img[i * 4 + 2] = c; img[i * 4 + 3] = 255;
+            }
+            if (texGen == 0) glGenTextures(1, &texGen);
+            glBindTexture(GL_TEXTURE_2D, texGen);
+            glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP_, GL_TRUE);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 4); glPixelStorei(GL_PACK_ALIGNMENT, 4);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 16, 16, 0, GL_RGBA, GL_UNSIGNED_BYTE, img);
+            v[0] = 0; glGetTexLevelParameteriv(GL_TEXTURE_2D, 1, GL_TEXTURE_WIDTH, v);
+            one[0] = one[1] = one[2] = 0;
+            glGetTexImage(GL_TEXTURE_2D, 4, GL_RGBA, GL_UNSIGNED_BYTE, one);
+            check(*glerr() == 0 && v[0] == 8 && abs(one[0] - 127) <= 24,
+                  "GL_GENERATE_MIPMAP: level 1 is 8 wide (%d), the 1x1 level is grey (%d)", v[0], one[0]);            /* the same after glCopyTexImage2D: the levels must follow the new level 0 */
+            glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 0, 0, 8, 8, 0);
+            v[0] = 0; glGetTexLevelParameteriv(GL_TEXTURE_2D, 1, GL_TEXTURE_WIDTH, v);
+            v[1] = -1; glGetTexLevelParameteriv(GL_TEXTURE_2D, 4, GL_TEXTURE_WIDTH, v + 1);
+            check(*glerr() == 0 && v[0] == 4, "and after glCopyTexImage2D of 8x8: level 1 is 4 wide (%d)", v[0]);
+        }
+        glHint(0x8192 /* GL_GENERATE_MIPMAP_HINT */, GL_NICEST);
+        check(*glerr() == 0, "glHint(GL_GENERATE_MIPMAP_HINT) is accepted");
+        glEnableClientState(0x845E /* GL_SECONDARY_COLOR_ARRAY */);
+        check(*glerr() == 0 && glIsEnabled(0x845E), "GL_SECONDARY_COLOR_ARRAY can be enabled");
+        glDisableClientState(0x845E);
+        glTexEnvi(GL_TEXTURE_ENV, 0x8580 /* GL_SOURCE0_RGB */, GL_TEXTURE0_);
+        check(*glerr() == 0, "GL_TEXTURE0 as a combine source (crossbar) is accepted");
+        glTexEnvi(GL_TEXTURE_ENV, 0x8580, GL_TEXTURE);
+        glerr();
+
+    }
+    glEnable(GL_TEXTURE_2D);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+    glColor3f(1, 1, 1);
+    /* row 1: mirrored repeat.  Left half of the texture red, right half green; s runs 1..2 */
+    if (texHalf == 0) {
+        for (i = 0; i < 16; i++) {
+            half[i * 4] = (GLubyte)((i % 4) < 2 ? 255 : 0); half[i * 4 + 1] = (GLubyte)((i % 4) < 2 ? 0 : 255);
+            half[i * 4 + 2] = 0; half[i * 4 + 3] = 255;
+        }
+        glGenTextures(1, &texHalf); glBindTexture(GL_TEXTURE_2D, texHalf);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 4, 4, 0, GL_RGBA, GL_UNSIGNED_BYTE, half);
+    }
+    glBindTexture(GL_TEXTURE_2D, texHalf);
+    for (i = 0; i < 2; i++) {
+        float x = (float)(10 + i * 120);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, i == 0 ? GL_REPEAT : GL_MIRRORED_REPEAT_);
+        glBegin(GL_QUADS);
+        glTexCoord2f(1, 0); glVertex2f(x, (float)y);
+        glTexCoord2f(2, 0); glVertex2f(x + 100, (float)y);
+        glTexCoord2f(2, 1); glVertex2f(x + 100, (float)(y + 40));
+        glTexCoord2f(1, 1); glVertex2f(x, (float)(y + 40));
+        glEnd();
+    }
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    if (g_checking) {
+        GLubyte q[4];
+        readpx(30, y + 20, px); readpx(150, y + 20, q);
+        check(*glerr() == 0 && nearc(px, 255, 0, 0, fbtol() + 30) && nearc(q, 0, 255, 0, fbtol() + 30),
+              "GL_MIRRORED_REPEAT: repeat starts red, mirror starts green (%d %d %d / %d %d %d)",
+              px[0], px[1], px[2], q[0], q[1], q[2]);
+    }
+    /* row 2: LOD bias on the coloured mip chain */
+    y -= 60;
+    if (texLevels == 0) {
+        glGenTextures(1, &texLevels); glBindTexture(GL_TEXTURE_2D, texLevels);
+        for (i = 0; i < 6; i++) solidLevel(i, 32 >> i, g_levelColor[i]);
+    }
+    glBindTexture(GL_TEXTURE_2D, texLevels);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    quad(10, (float)y, 32, 32);
+    glTexEnvf(GL_TEXTURE_FILTER_CONTROL_, GL_TEXTURE_LOD_BIAS_, 2.0f);
+    quad(60, (float)y, 32, 32);
+    glTexEnvf(GL_TEXTURE_FILTER_CONTROL_, GL_TEXTURE_LOD_BIAS_, 0.0f);
+    if (g_checking) {
+        int a, b;
+        const char *e = glerr();
+        readpx(26, y + 16, px); a = levelOf(px);
+        readpx(76, y + 16, px); b = levelOf(px);
+        check(*e == 0 && a == 0 && b >= 1, "GL_TEXTURE_LOD_BIAS 2: a 32 px quad goes from level %d to level %d", a, b);
+    }
+    glDisable(GL_TEXTURE_2D);
+    /* row 3: glMultiDrawArrays, two quads */
+    y -= 60;
+    if (multiDrawArrays != NULL) {
+        glEnableClientState(GL_VERTEX_ARRAY);
+        glVertexPointer(2, GL_FLOAT, 0, twoQuads);
+        glPushMatrix(); glTranslatef(10, (float)y, 0);
+        glColor3f(1, 0.5f, 0);
+        multiDrawArrays(GL_QUADS, firsts, counts, 2);
+        glPopMatrix();
+        glDisableClientState(GL_VERTEX_ARRAY);
+        if (g_checking) {
+            GLubyte q[4];
+            const char *e = glerr();
+            readpx(30, y + 20, px); readpx(90, y + 20, q);
+            check(*e == 0 && nearc(px, 255, 128, 0, fbtol() + 10) && nearc(q, 255, 128, 0, fbtol() + 10),
+                  "glMultiDrawArrays draws both quads (%d %d %d / %d %d %d)", px[0], px[1], px[2], q[0], q[1], q[2]);
+        }
+    }
+    /* row 4: glWindowPos + glDrawPixels */
+    y -= 40;
+    if (windowPos2i != NULL) {
+        for (i = 0; i < 64; i++) { cyan[i * 4] = 0; cyan[i * 4 + 1] = 255; cyan[i * 4 + 2] = 255; cyan[i * 4 + 3] = 255; }
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        glMatrixMode(GL_MODELVIEW); glPushMatrix(); glTranslatef(500, 500, 0);     /* must not matter */
+        windowPos2i(10, y);
+        glPopMatrix();
+        glDrawPixels(8, 8, GL_RGBA, GL_UNSIGNED_BYTE, cyan);
+        if (g_checking) {
+            const char *e = glerr();
+            f[0] = f[1] = -1; glGetFloatv(GL_CURRENT_RASTER_POSITION, f);
+            readpx(14, y + 4, px);
+            check(*e == 0 && f[0] == 10.0f && f[1] == (GLfloat)y && nearc(px, 0, 255, 255, fbtol() + 10),
+                  "glWindowPos2i + glDrawPixels: position %g,%g, pixel %d %d %d", f[0], f[1], px[0], px[1], px[2]);
+        }
+    }
+    glerr();
+}
+
+/* =====================================================================================================================
+** page 10: OpenGL 1.5: buffer objects, occlusion queries
+*/
+typedef void (APIENTRY *PFN_genNames)(GLsizei, GLuint *);
+typedef void (APIENTRY *PFN_delNames)(GLsizei, const GLuint *);
+typedef GLboolean (APIENTRY *PFN_isName)(GLuint);
+typedef void (APIENTRY *PFN_bindBuffer)(GLenum, GLuint);
+typedef void (APIENTRY *PFN_bufferData)(GLenum, int, const GLvoid *, GLenum);
+typedef void (APIENTRY *PFN_bufferSubData)(GLenum, int, int, const GLvoid *);
+typedef void (APIENTRY *PFN_getBufferSubData)(GLenum, int, int, GLvoid *);
+typedef GLvoid *(APIENTRY *PFN_mapBuffer)(GLenum, GLenum);
+typedef GLboolean (APIENTRY *PFN_unmapBuffer)(GLenum);
+typedef void (APIENTRY *PFN_getBufferParam)(GLenum, GLenum, GLint *);
+typedef void (APIENTRY *PFN_beginQuery)(GLenum, GLuint);
+typedef void (APIENTRY *PFN_endQuery)(GLenum);
+typedef void (APIENTRY *PFN_getQueryiv)(GLenum, GLenum, GLint *);
+typedef void (APIENTRY *PFN_getQueryObjectuiv)(GLuint, GLenum, GLuint *);
+#define GL_ARRAY_BUFFER_15          0x8892
+#define GL_ELEMENT_ARRAY_BUFFER_15  0x8893
+typedef struct { GLfloat x, y; GLubyte r, g, b, a; } BufVert;
+static void bufQuad(BufVert *v, float x, float y, float w, int r, int g, int b)
+{
+    int i;
+    v[0].x = x; v[0].y = y; v[1].x = x + w; v[1].y = y; v[2].x = x + w; v[2].y = y + w; v[3].x = x; v[3].y = y + w;
+    for (i = 0; i < 4; i++) { v[i].r = (GLubyte)r; v[i].g = (GLubyte)g; v[i].b = (GLubyte)b; v[i].a = 255; }
+}
+static void page_gl15(void)
+{
+    static const char *procs[] = { "glGenBuffers", "glDeleteBuffers", "glIsBuffer", "glBindBuffer", "glBufferData",
+        "glBufferSubData", "glGetBufferSubData", "glMapBuffer", "glUnmapBuffer", "glGetBufferParameteriv",
+        "glGetBufferPointerv", "glGenQueries", "glDeleteQueries", "glIsQuery", "glBeginQuery", "glEndQuery",
+        "glGetQueryiv", "glGetQueryObjectiv", "glGetQueryObjectuiv", "glBindBufferARB", "glBufferDataARB" };
+    static const GLushort quadIdx[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
+    PFN_genNames genBuffers = (PFN_genNames)getproc("glGenBuffers"), genQueries = (PFN_genNames)getproc("glGenQueries");
+    PFN_delNames deleteBuffers = (PFN_delNames)getproc("glDeleteBuffers"), deleteQueries = (PFN_delNames)getproc("glDeleteQueries");
+    PFN_isName isBuffer = (PFN_isName)getproc("glIsBuffer");
+    PFN_bindBuffer bindBuffer = (PFN_bindBuffer)getproc("glBindBuffer");
+    PFN_bufferData bufferData = (PFN_bufferData)getproc("glBufferData");
+    PFN_bufferSubData bufferSubData = (PFN_bufferSubData)getproc("glBufferSubData");
+    PFN_getBufferSubData getBufferSubData = (PFN_getBufferSubData)getproc("glGetBufferSubData");
+    PFN_mapBuffer mapBuffer = (PFN_mapBuffer)getproc("glMapBuffer");
+    PFN_unmapBuffer unmapBuffer = (PFN_unmapBuffer)getproc("glUnmapBuffer");
+    PFN_getBufferParam getBufferParameteriv = (PFN_getBufferParam)getproc("glGetBufferParameteriv");
+    PFN_beginQuery beginQuery = (PFN_beginQuery)getproc("glBeginQuery");
+    PFN_endQuery endQuery = (PFN_endQuery)getproc("glEndQuery");
+    PFN_getQueryiv getQueryiv = (PFN_getQueryiv)getproc("glGetQueryiv");
+    PFN_getQueryObjectuiv getQueryObjectuiv = (PFN_getQueryObjectuiv)getproc("glGetQueryObjectuiv");
+    BufVert verts[8], back[4], *map;
+    GLuint buf[2] = { 0, 0 }, query = 0, samples;
+    GLubyte px[4], q[4];
+    GLint v[4];
+    GLvoid *ptr;
+    const char *e;
+    int i, missing = 0, y = g_h - 80, ok;
+
+    ortho();
+    glDisable(GL_LIGHTING); glDisable(GL_DEPTH_TEST); glDisable(GL_BLEND); glDisable(GL_TEXTURE_2D);
+    if (g_ver < 15) {
+        if (g_checking) {
+            info("the driver reports %d.%d: 1.5 must not be offered", g_ver / 10, g_ver % 10);
+            check(bindBuffer == NULL, "glBindBuffer is not handed out");
+            check(beginQuery == NULL, "glBeginQuery is not handed out");
+        }
+        return;
+    }
+    for (i = 0; i < sizeof(procs) / sizeof(procs[0]); i++)
+        if (getproc(procs[i]) == NULL) { missing++; if (g_checking) info("  missing: %s", procs[i]); }
+    if (g_checking) check(missing == 0, "the 1.5 entry points are handed out (%d missing)", missing);
+    glerr();
+    if (missing) return;
+
+    /* ---- buffer objects: state ---- */
+    genBuffers(2, buf);
+    bindBuffer(GL_ARRAY_BUFFER_15, buf[0]);
+    bufQuad(verts, 10, (float)y, 40, 255, 0, 0);
+    bufQuad(verts + 4, 60, (float)y, 40, 0, 255, 0);
+    bufferData(GL_ARRAY_BUFFER_15, 4 * sizeof(BufVert), verts, 0x88E4 /* GL_STATIC_DRAW */);
+    if (g_checking) {
+        e = glerr();
+        v[0] = v[1] = v[2] = -1;
+        glGetIntegerv(0x8894 /* GL_ARRAY_BUFFER_BINDING */, v);
+        getBufferParameteriv(GL_ARRAY_BUFFER_15, 0x8764 /* GL_BUFFER_SIZE */, v + 1);
+        getBufferParameteriv(GL_ARRAY_BUFFER_15, 0x8765 /* GL_BUFFER_USAGE */, v + 2);
+        check(*e == 0 && buf[0] != 0 && buf[1] != 0 && buf[0] != buf[1] && isBuffer(buf[0]) && !isBuffer(buf[1]) &&
+              v[0] == (GLint)buf[0] && v[1] == 4 * sizeof(BufVert) && v[2] == 0x88E4,
+              "glGenBuffers / glBindBuffer / glBufferData: binding %d, size %d, usage 0x%x %s", v[0], v[1], v[2], e);
+        memset(back, 0, sizeof(back));
+        bufferSubData(GL_ARRAY_BUFFER_15, 2 * sizeof(BufVert), sizeof(BufVert), verts + 2);
+        getBufferSubData(GL_ARRAY_BUFFER_15, 0, sizeof(back), back);
+        check(noerr("glBufferSubData / glGetBufferSubData") && memcmp(back, verts, sizeof(back)) == 0,
+              "glGetBufferSubData returns what glBufferData stored");
+        /* written through the mapping, read back with glGetBufferSubData.  (What the mapping holds on entry is only
+        ** reported: wine's 32-bit layer hands out a copy it does not fill) */
+        map = (BufVert *)mapBuffer(GL_ARRAY_BUFFER_15, 0x88BA /* GL_READ_WRITE */);
+        v[0] = 0; getBufferParameteriv(GL_ARRAY_BUFFER_15, 0x88BC /* GL_BUFFER_MAPPED */, v);
+        ok = map != NULL && v[0] == 1;
+        if (map != NULL) {
+            info("  the mapping %s the buffer's data on entry", memcmp(map, verts, 4 * sizeof(BufVert)) == 0 ? "holds" : "does NOT hold");
+            memcpy(map, verts, 4 * sizeof(BufVert));
+            map[1].g = 77;
+            ok = unmapBuffer(GL_ARRAY_BUFFER_15) && ok;
+            memset(back, 0, sizeof(back));
+            getBufferSubData(GL_ARRAY_BUFFER_15, 0, sizeof(back), back);
+            ok = ok && back[1].g == 77 && back[3].x == verts[3].x;
+            bufferSubData(GL_ARRAY_BUFFER_15, 0, 4 * sizeof(BufVert), verts);
+        }
+        e = glerr();
+        check(ok && *e == 0, "glMapBuffer: what is written through it is in the buffer after glUnmapBuffer %s", e);
+        bufferSubData(GL_ARRAY_BUFFER_15, 3 * sizeof(BufVert), 2 * sizeof(BufVert), verts);
+        check(glGetError() == GL_INVALID_VALUE, "glBufferSubData past the end: GL_INVALID_VALUE");
+        glerr();
+    }
+
+    /* ---- row 1: glDrawArrays out of the buffer; the pointers are offsets ---- */
+    glEnableClientState(GL_VERTEX_ARRAY); glEnableClientState(GL_COLOR_ARRAY);
+    glVertexPointer(2, GL_FLOAT, sizeof(BufVert), (const GLvoid *)0);
+    glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(BufVert), (const GLvoid *)8);
+    glDrawArrays(GL_QUADS, 0, 4);
+    if (g_checking) {
+        e = glerr();
+        readpx(30, y + 20, px);
+        check(*e == 0 && nearc(px, 255, 0, 0, fbtol()), "glDrawArrays from a buffer object: red (%d %d %d) %s",
+              px[0], px[1], px[2], e);
+        v[0] = -1; ptr = (GLvoid *)-1;
+        glGetIntegerv(0x8898 /* GL_COLOR_ARRAY_BUFFER_BINDING */, v);
+        glGetPointerv(GL_COLOR_ARRAY_POINTER, &ptr);
+        check(v[0] == (GLint)buf[0], "GL_COLOR_ARRAY_BUFFER_BINDING is the buffer (%d)", v[0]);
+        info("  glGetPointerv of that array: %d (the offset, 8, is right)", (int)ptr);
+        glerr();
+    }
+    /* the buffer grows after the pointers were set: both quads must come out */
+    bufferData(GL_ARRAY_BUFFER_15, 64 * 1024, NULL, 0x88E8 /* GL_DYNAMIC_DRAW */);
+    bufferSubData(GL_ARRAY_BUFFER_15, 0, 8 * sizeof(BufVert), verts);
+    bindBuffer(GL_ARRAY_BUFFER_15, 0);                  /* the arrays keep their buffer */
+    glDrawArrays(GL_QUADS, 0, 8);
+    if (g_checking) {
+        e = glerr();
+        readpx(30, y + 20, px); readpx(80, y + 20, q);
+        check(*e == 0 && nearc(px, 255, 0, 0, fbtol()) && nearc(q, 0, 255, 0, fbtol()),
+              "after glBufferData made it larger: red and green (%d %d %d / %d %d %d) %s",
+              px[0], px[1], px[2], q[0], q[1], q[2], e);
+    }
+
+    /* ---- row 2: glDrawElements with the indices in an element buffer ---- */
+    y -= 60;
+    bindBuffer(GL_ARRAY_BUFFER_15, buf[0]);
+    bufQuad(verts, 10, (float)y, 40, 0, 0, 255);
+    bufQuad(verts + 4, 60, (float)y, 40, 255, 255, 0);
+    bufferSubData(GL_ARRAY_BUFFER_15, 0, 8 * sizeof(BufVert), verts);
+    bindBuffer(GL_ELEMENT_ARRAY_BUFFER_15, buf[1]);
+    bufferData(GL_ELEMENT_ARRAY_BUFFER_15, sizeof(quadIdx), quadIdx, 0x88E4);
+    glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, (const GLvoid *)(4 * sizeof(GLushort)));   /* the second quad */
+    glDrawElements(GL_TRIANGLE_FAN, 4, GL_UNSIGNED_SHORT, (const GLvoid *)0);                 /* the first one */
+    if (g_checking) {
+        e = glerr();
+        readpx(30, y + 20, px); readpx(80, y + 20, q);
+        check(*e == 0 && nearc(px, 0, 0, 255, fbtol()) && nearc(q, 255, 255, 0, fbtol()),
+              "glDrawElements from an element buffer: blue and yellow (%d %d %d / %d %d %d) %s",
+              px[0], px[1], px[2], q[0], q[1], q[2], e);
+    }
+    bindBuffer(GL_ELEMENT_ARRAY_BUFFER_15, 0);
+    bindBuffer(GL_ARRAY_BUFFER_15, 0);
+
+    /* ---- row 3: back to plain client arrays ---- */
+    y -= 60;
+    bufQuad(verts, 10, (float)y, 40, 255, 0, 255);
+    glVertexPointer(2, GL_FLOAT, sizeof(BufVert), &verts[0].x);
+    glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(BufVert), &verts[0].r);
+    glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, quadIdx);
+    if (g_checking) {
+        e = glerr();
+        readpx(30, y + 20, px);
+        v[0] = -1; glGetIntegerv(0x8896 /* GL_VERTEX_ARRAY_BUFFER_BINDING */, v);
+        check(*e == 0 && v[0] == 0 && nearc(px, 255, 0, 255, fbtol()),
+              "client arrays again after the buffers are unbound: magenta (%d %d %d) %s", px[0], px[1], px[2], e);
+    }
+    glDisableClientState(GL_VERTEX_ARRAY); glDisableClientState(GL_COLOR_ARRAY);
+    deleteBuffers(2, buf);
+    if (g_checking)
+        check(*glerr() == 0 && !isBuffer(buf[0]), "glDeleteBuffers");
+
+    /* ---- row 4: an occlusion query around a visible quad ---- */
+    y -= 60;
+    genQueries(1, &query);
+    beginQuery(0x8914 /* GL_SAMPLES_PASSED */, query);
+    glColor3f(0, 1, 1);
+    quad(10, (float)y, 40, 40);
+    endQuery(0x8914);
+    if (g_checking) {
+        e = glerr();
+        v[0] = -1; samples = 0; v[1] = 0;
+        getQueryiv(0x8914, 0x8864 /* GL_QUERY_COUNTER_BITS */, v);
+        getQueryObjectuiv(query, 0x8867 /* GL_QUERY_RESULT_AVAILABLE */, (GLuint *)&v[1]);
+        getQueryObjectuiv(query, 0x8866 /* GL_QUERY_RESULT */, &samples);
+        check(*e == 0 && *glerr() == 0 && query != 0 && samples > 0,
+              "occlusion query of a visible 40 x 40 quad: %u samples (counter bits %d) %s", samples, v[0], e);
+        /* a quad behind a nearer one: 0 from a driver that counts, not 0 from one that only accepts queries */
+        glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LESS);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        glBegin(GL_QUADS); glVertex3f(60, (float)y, 0.5f); glVertex3f(100, (float)y, 0.5f);
+        glVertex3f(100, (float)y + 40, 0.5f); glVertex3f(60, (float)y + 40, 0.5f); glEnd();
+        beginQuery(0x8914, query);
+        glBegin(GL_QUADS); glVertex3f(60, (float)y, -0.5f); glVertex3f(100, (float)y, -0.5f);
+        glVertex3f(100, (float)y + 40, -0.5f); glVertex3f(60, (float)y + 40, -0.5f); glEnd();
+        endQuery(0x8914);
+        glDisable(GL_DEPTH_TEST);
+        samples = 12345; getQueryObjectuiv(query, 0x8866, &samples);
+        info("  a hidden quad: %u samples (0 = really counted; the 3dfx ICD says visible)", samples);
+        /* shadow compare functions other than LEQUAL / GEQUAL are accepted */
+        glTexParameteri(GL_TEXTURE_2D, 0x884D /* GL_TEXTURE_COMPARE_FUNC */, GL_GREATER);
+        check(*glerr() == 0, "GL_TEXTURE_COMPARE_FUNC takes GL_GREATER (1.5 shadow functions)");
+        glTexParameteri(GL_TEXTURE_2D, 0x884D, GL_LEQUAL);
+    }
+    deleteQueries(1, &query);
+    glerr();
+}
+
 /* ---- the pages ---- */
 typedef struct { const char *title; void (*draw)(void); } Page;
 static const Page g_pages[] = {
@@ -868,6 +1463,9 @@ static const Page g_pages[] = {
     { "OpenGL 1.2: texture base / max level", page_levels },
     { "OpenGL 1.2: rescale normal",     page_rescale },
     { "OpenGL 1.2: glDrawRangeElements", page_drawrange },
+    { "OpenGL 1.3",                     page_gl13 },
+    { "OpenGL 1.4",                     page_gl14 },
+    { "OpenGL 1.5",                     page_gl15 },
 };
 #define NPAGES ((int)(sizeof(g_pages) / sizeof(g_pages[0])))
 static int g_page, g_runChecks = 1;
@@ -929,11 +1527,26 @@ static void frame(void)
     {   /* is the text panel in the frame buffer?  Its background is black, the clear colour is not */
         static int told[16];
         GLubyte px[4];
+        int tell = g_log && g_page < 16 && !told[g_page], missing;
         readpx(g_w - 6, g_h - PANEL_H + 6, px);
-        if (g_log && g_page < 16 && !told[g_page]) {
+        missing = !(px[0] < 20 && px[1] < 20 && px[2] < 20);
+        if (tell) {
             told[g_page] = 1;
             fprintf(g_log, "       (text panel read back from the frame: %s, %d %d %d)\n",
-                    (px[0] < 20 && px[1] < 20 && px[2] < 20) ? "there" : "MISSING", px[0], px[1], px[2]);
+                    missing ? "MISSING" : "there", px[0], px[1], px[2]);
+        }
+        if (tell && missing) {      /* late, or never?  And is it on the screen after the swap? */
+            Sleep(300);
+            readpx(g_w - 6, g_h - PANEL_H + 6, px);
+            fprintf(g_log, "       (the same read 300 ms later: %d %d %d)\n", px[0], px[1], px[2]);
+            if (g_auto) saveBmp(g_page + 1);
+            SwapBuffers(g_hdc);
+            glFinish();
+            glReadBuffer(GL_FRONT);
+            glReadPixels(g_w - 6, g_h - PANEL_H + 6, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
+            fprintf(g_log, "       (from the front buffer after the swap: %d %d %d)\n", px[0], px[1], px[2]);
+            glReadBuffer(GL_BACK);
+            return;
         }
     }
     if (g_auto) saveBmp(g_page + 1);

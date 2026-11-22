@@ -839,10 +839,42 @@ GLboolean __fastcall hwHasPixextExt(void);
 const char *__fastcall hwRegOrEnvString(const char *name);
 GLint __fastcall __glTexLevelParam(__GLcontext *gc, __GLtextureICD *tex, GLenum pname, __GLfloat v);    /* gl_tex.c */
 void __fastcall __glTexLevelRange(const __GLtextureICD *tex, GLint top, GLint *base, GLint *last);
+/* gl_newer.c: OpenGL 1.3 / 1.4 / 1.5 */
+#define __GL_BUFSLOT_VERTEX     0       /* the arrays that can live in a buffer object (1.5) */
+#define __GL_BUFSLOT_NORMAL     1
+#define __GL_BUFSLOT_COLOR      2
+#define __GL_BUFSLOT_INDEX      3
+#define __GL_BUFSLOT_EDGE       4
+#define __GL_BUFSLOT_FOG        5
+#define __GL_BUFSLOT_SECONDARY  6
+#define __GL_BUFSLOT_TEX0       7       /* + texture unit */
+const GLvoid *__fastcall __glBufArrayPointer(__GLcontext *gc, GLint slot, const GLvoid *pointer);
+const GLvoid *__fastcall __glBufElements(const GLvoid *indices);
+GLboolean __fastcall __glBufGetPointer(__GLcontext *gc, GLenum pname, void **params);
+typedef struct __GLnewerProcRec { const char *name; PROC fn; GLint version; } __GLnewerProc;
+extern const __GLnewerProc g_newerProcs[];
+extern const GLint g_newerProcCount;
+GLboolean __fastcall __glEnableNewer(__GLcontext *gc, GLenum *cap, GLboolean on);
+GLboolean __fastcall __glIsEnabledNewer(__GLcontext *gc, GLenum cap, GLboolean *out);
+GLboolean __fastcall __glGetNewer(__GLcontext *gc, GLenum sq, GLint *iv, __GLfloat *fv, GLint *ni, GLint *nf);
+GLboolean __fastcall __glWrapModeNewer(GLenum e);
+GLint __fastcall hwTexMirrorMode(void);
+GLboolean __fastcall __glTexEnvNewer(GLenum target, GLenum pname, __GLfloat v);
+GLboolean __fastcall __glTexImage2DNewer(GLenum target, GLint *components, GLenum *format);
+void __fastcall __glAutoMipmap(__GLcontext *gc, GLenum target);
+void __fastcall __glLodBiasRestore(__GLcontext *gc);
+GLboolean __fastcall __glClientStateNewer(GLenum array, GLboolean on);
+GLboolean __fastcall __glHintNewer(GLenum target, GLenum mode);
+GLboolean __fastcall __glTexWantsMipmaps(__GLcontext *gc, GLenum target);         /* gl_tex.c */
+GLboolean __fastcall __glBlendConstFactor(GLenum factor, GLuint *out);
+void __fastcall __glBlendSeparateOff(void);
+void __fastcall __glBlendSeparateAlpha(__GLcontext *gc, GLint *as, GLint *ad);
+GLboolean __fastcall hwBlendFactors(__GLcontext *gc, GLenum sfactor, GLenum dfactor, GLuint *src, GLuint *dst);
 /* gl_tex.c: the OpenGL 1.2 3D texture stand-in */
 GLboolean __fastcall __glTex3DTarget(GLenum target);
 GLboolean __fastcall __glTex3DBind(__GLcontext *gc, GLenum target, GLuint texture);
 GLuint __fastcall __glTex3DBinding(__GLcontext *gc);
+GLuint __fastcall __glTexCubeBinding(__GLcontext *gc);
 GLboolean __fastcall __glTex3DLevelParam(GLenum target, GLint level, GLenum pname, GLint *out);
 void APIENTRY __glim_TexImage3D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height,
                                 GLsizei depth, GLint border, GLenum format, GLenum type, const GLvoid *pixels);
@@ -860,7 +892,7 @@ void __fastcall __glPacked12Done(__GLcontext *gc, GLubyte *tmp, const __GLpixelP
 GLubyte *__fastcall __glPacked12Fetch(__GLcontext *gc, GLsizei w, GLsizei h, GLenum type, __GLpixelPackMode *saved);
 void __fastcall __glPacked12Store(__GLcontext *gc, GLsizei w, GLsizei h, GLenum type, GLubyte *tmp, GLvoid *pixels,
                                   const __GLpixelPackMode *saved);
-extern GLint g_glVersion;                                           /* sst_settings.c: 11 or 12 (FX_GL_VERSION) */
+extern GLint g_glVersion;                                           /* sst_settings.c: 11 .. 15 (FX_GL_VERSION) */
 void APIENTRY __glim_DrawRangeElements(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type,
                                        const GLvoid *indices);     /* gl_attrib.c */
 void __fastcall hwFifoStripTri(__GLvertexICD *a, __GLvertexICD *b, __GLvertexICD *c);  /* the FIFO strip / fan triangle */

@@ -368,6 +368,7 @@ void __fastcall hwFlushGrState(__GLcontext *gc, GLuint edx_unused)
                      r[0] == GR_BLEND_ONE_MINUS_SAME_COLOR_EXT ? GR_BLEND_ONE_MINUS_SRC_ALPHA : r[0];
                 ad = r[1] == GR_BLEND_SAME_COLOR_EXT ? GR_BLEND_DST_ALPHA :
                      r[1] == GR_BLEND_ONE_MINUS_SAME_COLOR_EXT ? GR_BLEND_ONE_MINUS_DST_ALPHA : r[1];
+                __glBlendSeparateAlpha(gc, &as, &ad);       /* glBlendFuncSeparate's alpha factors (OpenGL 1.4) */
                 ((__GLext6)gc->hwcx.grAlphaBlendFunctionExt)(r[0], r[1], r[2], as, ad, r[2]);
             } else {
                 r = gc->hwcx.grState[__GL_GR_ALPHA_BLEND];

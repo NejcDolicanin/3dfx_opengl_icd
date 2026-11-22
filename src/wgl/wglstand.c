@@ -429,24 +429,12 @@ BOOL  WINAPI wglSASwapLayerBuffers(HDC hdc, UINT planes)                        
 
 /* the wglGetProcAddress table (690ee000: {name, fn} x 0x72, glstubs.c) */
 extern struct { const char *name; PROC fn; } g_extProcTable[0x72];   /* 690ee000 .. 690ee390 */
-/* entry points added after the original's table, each with the OpenGL version (g_glVersion) that offers it */
+/* entry points added after the original's table (gl_newer.c g_newerProcs, each with the OpenGL version that
+** offers it), and the core names of what the table has under an ARB / EXT name */
+typedef struct __GLnewerProcRec { const char *name; PROC fn; GLint version; } __GLnewerProc;
+extern const __GLnewerProc g_newerProcs[];
+extern const GLint g_newerProcCount;
 extern GLint g_glVersion;
-void APIENTRY __glim_DrawRangeElements(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type,
-                                       const GLvoid *indices);
-void APIENTRY __glim_TexImage3D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height,
-                                GLsizei depth, GLint border, GLenum format, GLenum type, const GLvoid *pixels);
-void APIENTRY __glim_TexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset,
-                                   GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type,
-                                   const GLvoid *pixels);
-void APIENTRY __glim_CopyTexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset,
-                                       GLint x, GLint y, GLsizei width, GLsizei height);
-static const struct { const char *name; PROC fn; GLint version; } s_newerProcs[] = {
-    { "glDrawRangeElements",    (PROC)__glim_DrawRangeElements, 12 },
-    { "glDrawRangeElementsEXT", (PROC)__glim_DrawRangeElements, 12 },
-    { "glTexImage3D",           (PROC)__glim_TexImage3D, 12 },          /* accepted, not drawn (gl_tex.c) */
-    { "glTexSubImage3D",        (PROC)__glim_TexSubImage3D, 12 },
-    { "glCopyTexSubImage3D",    (PROC)__glim_CopyTexSubImage3D, 12 },
-};
 /* 69009882 -- wglGetProcAddressTable: look name up (exact, case-sensitive) in g_extProcTable and return its
 ** function, NULL when it is not there; with no current context (the null gc) NULL and ERROR_INVALID_HANDLE */
 void *__fastcall wglGetProcAddressTable(const char *name)
@@ -462,9 +450,37 @@ void *__fastcall wglGetProcAddressTable(const char *name)
         if (*a == *b && *a == '\0') return (void *)g_extProcTable[i].fn;
     }
     /* the entry points of the newer OpenGL versions, when FX_GL_VERSION offers them */
-    for (i = 0; i < sizeof(s_newerProcs) / sizeof(s_newerProcs[0]); i++)
-        if (g_glVersion >= s_newerProcs[i].version && strcmp(name, s_newerProcs[i].name) == 0)
-            return (void *)s_newerProcs[i].fn;
+    for (i = 0; i < g_newerProcCount; i++)
+        if (g_glVersion >= g_newerProcs[i].version && strcmp(name, g_newerProcs[i].name) == 0)
+            return (void *)g_newerProcs[i].fn;
+    {   /* the buffer objects and queries of 1.5 under their ARB names: glBindBufferARB -> glBindBuffer */
+        size_t n = strlen(name);
+        if (g_glVersion >= 15 && n > 3 && strcmp(name + n - 3, "ARB") == 0)
+            for (i = 0; i < g_newerProcCount; i++)
+                if (g_newerProcs[i].version == 15 && strlen(g_newerProcs[i].name) == n - 3 &&
+                    strncmp(name, g_newerProcs[i].name, n - 3) == 0)
+                    return (void *)g_newerProcs[i].fn;
+    }
+    {   /* core names: glActiveTexture -> glActiveTextureARB (1.3), glFogCoordf -> glFogCoordfEXT (1.4), ... */
+        static const struct { const char *prefix, *suffix; GLint version; } alias[] = {
+            { "glActiveTexture", "ARB", 13 }, { "glClientActiveTexture", "ARB", 13 }, { "glMultiTexCoord", "ARB", 13 },
+            { "glCompressedTex", "ARB", 13 }, { "glGetCompressedTexImage", "ARB", 13 },
+            { "glFogCoord", "EXT", 14 }, { "glPointParameterf", "EXT", 14 }, { "glBlendEquation", "EXT", 14 } };
+        char full[64];
+        int k, t;
+        size_t n = strlen(name);
+
+        for (k = 0; k < sizeof(alias) / sizeof(alias[0]); k++) {
+            if (g_glVersion < alias[k].version || n + 4 > sizeof(full) ||
+                strncmp(name, alias[k].prefix, strlen(alias[k].prefix)) != 0)
+                continue;
+            strcpy(full, name);
+            strcat(full, alias[k].suffix);
+            for (t = 0; t < 0x72; t++)
+                if (strcmp(full, g_extProcTable[t].name) == 0)
+                    return (void *)g_extProcTable[t].fn;
+        }
+    }
     return NULL;
 }
 

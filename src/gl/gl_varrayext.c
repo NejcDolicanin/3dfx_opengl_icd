@@ -81,7 +81,7 @@ void __stdcall __glim_EdgeFlagPointer(GLint stride, const GLboolean *pointer)
 
     gc->vertexArray.edgeFlag.fetch = (__GLproc)glEdgeFlagv;
     gc->vertexArray.edgeFlag.fetch2 = (__GLproc)CopyEdgeFlag;     /* CopyEdgeFlag */
-    gc->vertexArray.edgeFlag.pointer = pointer;
+    gc->vertexArray.edgeFlag.pointer = __glBufArrayPointer(gc, __GL_BUFSLOT_EDGE, pointer);
     gc->vertexArray.edgeFlag.stride = stride ? stride : sizeof(GLboolean);
     gc->vertexArray.edgeFlag.userStride = stride;
     gc->vertexArray.formats = gc->vertexArray.formats | VERTARRAY_E_MASK;

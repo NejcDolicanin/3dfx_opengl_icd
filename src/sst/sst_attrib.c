@@ -98,6 +98,7 @@ void __stdcall __glsstim_BlendFunc(GLenum sfactor, GLenum dfactor)
     GLuint src, dst;
     __GL_SETUP_NOT_IN_BEGIN();
 
+    __glBlendSeparateOff();             /* the alpha factors follow again (glBlendFuncSeparate sets them after) */
     if (!hwBlendFactors(gc, sfactor, dfactor, &src, &dst)) {
         __glSetError(GL_INVALID_ENUM);
         return;
@@ -124,6 +125,12 @@ void __stdcall __glsstim_BlendEquationEXT(GLenum mode)
       case 0x8006: gc->hwcx.blendEquationHw = 0; break;     /* GL_FUNC_ADD_EXT */
       case 0x800a: gc->hwcx.blendEquationHw = 1; break;     /* GL_FUNC_SUBTRACT_EXT */
       case 0x800b: gc->hwcx.blendEquationHw = 2; break;     /* GL_FUNC_REVERSE_SUBTRACT_EXT */
+      case 0x8007: case 0x8008:                             /* GL_MIN, GL_MAX (OpenGL 1.4): not in the chip, */
+        if (g_glVersion >= 14) {                            /* drawn as GL_FUNC_ADD */
+            gc->hwcx.blendEquationHw = 0;
+            break;
+        }
+        /* fall through */
       default:
         __glSetError(GL_INVALID_ENUM);
         return;

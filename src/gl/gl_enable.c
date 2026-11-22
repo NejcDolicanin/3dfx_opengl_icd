@@ -8,7 +8,7 @@
 #include "icdprotos.h"
 
 /* 690b88e0 (size 1753) -- __glim_Enable: glEnable */
-void __stdcall __glim_Enable(GLenum cap)
+static void __stdcall __glim_Enable_base(GLenum cap)
 {
     __GL_SETUP_NOT_IN_BEGIN();
 
@@ -193,7 +193,7 @@ void __stdcall __glim_Enable(GLenum cap)
 }
 
 /* 690b9150 (size 1783) -- __glim_Disable: glDisable */
-void __stdcall __glim_Disable(GLenum cap)
+static void __stdcall __glim_Disable_base(GLenum cap)
 {
     __GL_SETUP_NOT_IN_BEGIN();
 
@@ -380,7 +380,7 @@ void __stdcall __glim_Disable(GLenum cap)
 }
 
 /* 690b99f0 (size 1475) -- __glim_IsEnabled: glIsEnabled */
-GLboolean __stdcall __glim_IsEnabled(GLenum cap)
+static GLboolean __stdcall __glim_IsEnabled_base(GLenum cap)
 {
     GLuint bit;
     __GL_SETUP_NOT_IN_BEGIN2();
@@ -540,4 +540,24 @@ GLboolean __stdcall __glim_IsEnabled(GLenum cap)
         break;
     }
     return bit != 0;
+}
+
+/* glEnable / glDisable: the caps of OpenGL 1.3 / 1.4 first (gl_newer.c), then the function above */
+void __stdcall __glim_Enable(GLenum cap)
+{
+    if (__glEnableNewer(__glCurrentGC(), &cap, GL_TRUE)) return;
+    __glim_Enable_base(cap);
+}
+
+void __stdcall __glim_Disable(GLenum cap)
+{
+    if (__glEnableNewer(__glCurrentGC(), &cap, GL_FALSE)) return;
+    __glim_Disable_base(cap);
+}
+
+GLboolean __stdcall __glim_IsEnabled(GLenum cap)
+{
+    GLboolean on;
+    if (__glIsEnabledNewer(__glCurrentGC(), cap, &on)) return on;
+    return __glim_IsEnabled_base(cap);
 }

@@ -973,7 +973,7 @@ void __stdcall __glim_VertexPointer(GLint size, GLenum type,
     fetch = (*vertex_func_table)[1][type - GL_BYTE][size];
     gc->vertexArray.vertex.type = type;
     gc->vertexArray.vertex.fetch2 = fetch;
-    gc->vertexArray.vertex.pointer = pointer;
+    gc->vertexArray.vertex.pointer = __glBufArrayPointer(gc, __GL_BUFSLOT_VERTEX, pointer);
     gc->vertexArray.vertex.size = size;
     gc->vertexArray.vertex.stride = stride ? stride : stride_array[t][size];
     gc->vertexArray.vertex.userStride = stride;
@@ -1003,7 +1003,7 @@ void __stdcall __glim_NormalPointer(GLenum type, GLsizei stride, const GLvoid *p
     fetch = (*normal_func_table)[1][type - GL_BYTE][3];
     gc->vertexArray.normal.type = type;
     gc->vertexArray.normal.fetch2 = fetch;
-    gc->vertexArray.normal.pointer = pointer;
+    gc->vertexArray.normal.pointer = __glBufArrayPointer(gc, __GL_BUFSLOT_NORMAL, pointer);
     gc->vertexArray.normal.stride = stride ? stride : stride_array[type - GL_BYTE][3];
     gc->vertexArray.normal.userStride = stride;
     fmt = (type_flag_table[type - GL_BYTE] << 8) | (gc->vertexArray.formats & 0xfffff0ff);
@@ -1033,7 +1033,7 @@ void __stdcall __glim_IndexPointer(GLenum type, GLsizei stride, const GLvoid *po
     fetch = (*index_func_table)[1][type - GL_BYTE][1];
     gc->vertexArray.index.type = type;
     gc->vertexArray.index.fetch2 = fetch;
-    gc->vertexArray.index.pointer = pointer;
+    gc->vertexArray.index.pointer = __glBufArrayPointer(gc, __GL_BUFSLOT_INDEX, pointer);
     gc->vertexArray.index.stride = stride ? stride : stride_array[type - GL_BYTE][1];
     gc->vertexArray.index.userStride = stride;
     fmt = (type_flag_table[type - GL_BYTE] << 28) | (gc->vertexArray.formats & 0x0fffffff);
@@ -1068,7 +1068,7 @@ void __stdcall __glim_FogCoordPointerEXT(GLenum type, GLsizei stride,
     fetch = (*fog_coord_func_table)[1][type - GL_BYTE][1];
     gc->vertexArray.fogCoord.type = type;
     gc->vertexArray.fogCoord.fetch2 = fetch;
-    gc->vertexArray.fogCoord.pointer = pointer;
+    gc->vertexArray.fogCoord.pointer = __glBufArrayPointer(gc, __GL_BUFSLOT_FOG, pointer);
     gc->vertexArray.fogCoord.stride = stride ? stride : stride_array[type - GL_BYTE][1];
     gc->vertexArray.fogCoord.userStride = stride;
     fmt = type_flag_table[type - GL_BYTE];
@@ -1333,7 +1333,7 @@ void __stdcall __glim_ColorPointer(GLint size, GLenum type, GLsizei stride, cons
     }
     gc->vertexArray.color.fetch = proc;
     gc->vertexArray.color.fetch2 = (*color_func_table)[1][type - GL_BYTE][size];
-    gc->vertexArray.color.pointer = pointer;
+    gc->vertexArray.color.pointer = __glBufArrayPointer(gc, __GL_BUFSLOT_COLOR, pointer);
     gc->vertexArray.color.size = size;
     gc->vertexArray.color.type = type;
     gc->vertexArray.color.stride = stride ? stride : stride_array[type - GL_BYTE][size];
@@ -1370,7 +1370,8 @@ void __stdcall __glim_TexCoordPointer(GLint size, GLenum type, GLsizei stride, c
     gc->vertexArray.texture.fetch[gc->fx.clientActiveTexture] = proc;
     gc->vertexArray.texture.fetch2[gc->fx.clientActiveTexture] =
         (*tex_coord_func_table)[1][type - GL_BYTE][size];
-    gc->vertexArray.texture.pointer[gc->fx.clientActiveTexture] = pointer;
+    gc->vertexArray.texture.pointer[gc->fx.clientActiveTexture] =
+        __glBufArrayPointer(gc, __GL_BUFSLOT_TEX0 + gc->fx.clientActiveTexture, pointer);
     gc->vertexArray.texture.size[gc->fx.clientActiveTexture] = size;
     gc->vertexArray.texture.type[gc->fx.clientActiveTexture] = type;
     gc->vertexArray.texture.stride[gc->fx.clientActiveTexture] =

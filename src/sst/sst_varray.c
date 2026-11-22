@@ -354,8 +354,10 @@ void __stdcall __glsstim_DrawElements(GLenum mode, GLsizei count,
     GLint hsrMode;
     GLint convert;
     const GLuint *ip;
+    const GLvoid *userIndices = indices;    /* (the generic one below does its own buffer-object lookup) */
     __GLcontext *gc = __glCurrentGC();
 
+    indices = __glBufElements(indices);
     hsrMode = hwCanDrawLockedTriangles(gc);
     if (mode == GL_TRIANGLES) {
         if (type == GL_UNSIGNED_INT) {
@@ -509,7 +511,7 @@ done:
             tmp[2].window.z = v2->window.z;
         }
     } else {
-        ((void (__stdcall *)(GLenum, GLsizei, GLenum, const GLvoid *))__glim_DrawElements)(mode, count, type, indices);
+        ((void (__stdcall *)(GLenum, GLsizei, GLenum, const GLvoid *))__glim_DrawElements)(mode, count, type, userIndices);
     }
 }
 

@@ -773,6 +773,7 @@ void __stdcall __glim_DrawElements(GLenum mode, GLsizei count, GLenum type, cons
     GLint i;
     __GL_SETUP_NOT_IN_BEGIN_VALIDATE();
 
+    indices = __glBufElements(indices);
     if (count < 0) {
 	__glSetError(GL_INVALID_VALUE);
 	return;
@@ -895,6 +896,7 @@ void __stdcall __gllc_DrawElements(GLenum mode, GLsizei count,
     GLint i, unit;
     __GL_SETUP_NOT_IN_BEGIN_VALIDATE();
 
+    indices = __glBufElements(indices);
     enables = gc->vertexArray.enableFlags;
     if (count < 0) {
 	__glSetError(GL_INVALID_VALUE);
@@ -1124,6 +1126,8 @@ void APIENTRY __glim_Hint(GLenum target, GLenum mode)
         gc->state.hints.ext594 = mode;
         break;
       default:
+        if (__glHintNewer(target, mode))        /* GL_GENERATE_MIPMAP_HINT (OpenGL 1.4, gl_newer.c) */
+            return;
         __glSetError(GL_INVALID_ENUM);
         return;
     }
@@ -1742,7 +1746,7 @@ void __fastcall __glim_PopClientAttrib(void)
 }
 
 /* 690ba6c0 -- __glim_EnableClientState: glEnableClientState */
-void __stdcall __glim_EnableClientState(GLenum array)
+static void __stdcall __glim_EnableClientState_base(GLenum array)
 {
     __GL_SETUP_NOT_IN_BEGIN();
 
@@ -1790,7 +1794,7 @@ void __stdcall __glim_EnableClientState(GLenum array)
 
 /* 690ba8f0 -- __glim_DisableClientState: vertexArray.enables holds component masks per array,
 ** enableFlags one bit per array (texture coordinates: 0x10000 << client active unit) */
-void __stdcall __glim_DisableClientState(GLenum array)
+static void __stdcall __glim_DisableClientState_base(GLenum array)
 {
     __GL_SETUP_NOT_IN_BEGIN();
 
@@ -2250,4 +2254,17 @@ void __stdcall __glim_Materiali(GLenum face, GLenum p, GLint i)
         __glSetError(GL_INVALID_ENUM);
         return;
     }
+}
+
+/* glEnableClientState / glDisableClientState: GL_SECONDARY_COLOR_ARRAY of OpenGL 1.4 first (gl_newer.c) */
+void __stdcall __glim_EnableClientState(GLenum array)
+{
+    if (__glClientStateNewer(array, GL_TRUE)) return;
+    __glim_EnableClientState_base(array);
+}
+
+void __stdcall __glim_DisableClientState(GLenum array)
+{
+    if (__glClientStateNewer(array, GL_FALSE)) return;
+    __glim_DisableClientState_base(array);
 }

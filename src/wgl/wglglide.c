@@ -278,6 +278,7 @@ GLint __fastcall wglGlideWinOpen(__GLcontext *gc, GLint resolution)
     }
     ICD_T("wglGlideWinOpen grSstWinOpen ctx (0 = failed)", ctx);
     s_auxBase = NULL;                   /* a new screen: the depth buffer's LFB address is looked up again */
+    if (ctx != 0) __glLodBiasRestore(gc);                   /* GL_TEXTURE_LOD_BIAS (OpenGL 1.4) into the new Glide context */
     if (ctx == 0) return -1;
     wglDisplayNotifyOpen();
     return ctx;
@@ -772,12 +773,12 @@ void __fastcall wglGlideTexKey(__GLcontext *gc, BYTE *texObj)
     }
     key <<= 1;
     switch (tex->params.sWrapMode) {
-    case GL_CLAMP: case GL_CLAMP_TO_EDGE: key |= 1; break;
+    case GL_CLAMP: case GL_CLAMP_TO_EDGE: case 0x812D: key |= 1; break;    /* (GL_CLAMP_TO_BORDER: as edge) */
     case GL_REPEAT: key |= 0; break;
     }
     key <<= 1;
     switch (tex->params.tWrapMode) {
-    case GL_CLAMP: case GL_CLAMP_TO_EDGE: key |= 1; break;
+    case GL_CLAMP: case GL_CLAMP_TO_EDGE: case 0x812D: key |= 1; break;    /* (GL_CLAMP_TO_BORDER: as edge) */
     case GL_REPEAT: key |= 0; break;
     }
     tex->params.hwKey = key;

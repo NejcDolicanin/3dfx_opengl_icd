@@ -330,6 +330,9 @@ void __stdcall __glim_GetTexParameterfv(GLenum target, GLenum pname, GLfloat v[]
       case GL_TEXTURE_PRIORITY:
 	v[0] = LookupNamePrio(gc, target)->priority;
 	break;
+      case 0x8191:				/* GL_GENERATE_MIPMAP (OpenGL 1.4) */
+	v[0] = (GLfloat)(LookupTexture(gc, target)->makeResidentArg & 1);
+	break;
       case 0x813C:				/* GL_TEXTURE_BASE_LEVEL (OpenGL 1.2) */
 	v[0] = (GLfloat)LookupTexture(gc, target)->baseLevel;
 	break;
@@ -389,6 +392,9 @@ void __stdcall __glim_GetTexParameteriv(GLenum target, GLenum pname, GLint v[])
 	break;
       case GL_TEXTURE_PRIORITY:
 	v[0] = __GL_FLOAT_TO_I(LookupNamePrio(gc, target)->priority);
+	break;
+      case 0x8191:				/* GL_GENERATE_MIPMAP (OpenGL 1.4) */
+	v[0] = LookupTexture(gc, target)->makeResidentArg & 1;
 	break;
       case 0x813C:				/* GL_TEXTURE_BASE_LEVEL (OpenGL 1.2) */
 	v[0] = LookupTexture(gc, target)->baseLevel;
@@ -901,6 +907,8 @@ void __stdcall __glim_GetPointerv(GLenum pname, void **params)
 {
     __GL_SETUP_NOT_IN_BEGIN();
 
+    if (__glBufGetPointer(gc, pname, params))       /* an array in a buffer object: its offset */
+        return;
     switch(pname) {
       case GL_VERTEX_ARRAY_POINTER:
           *params = (GLvoid *)gc->vertexArray.vertex.pointer;

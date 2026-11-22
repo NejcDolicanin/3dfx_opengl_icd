@@ -29,7 +29,7 @@ typedef void (__fastcall *__GLfreeProcA00)(__GLcontext *gc, void *p);
 /* 690a0a30 -- __glim_CopyTexSubImage2D (s_tex.c).  The ICD has no pixel-path width adjustment and
 ** tests the texture's own reference count.
 */
-void __stdcall __glim_CopyTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
+static void __stdcall __glim_CopyTexSubImage2D_base(GLenum target, GLint level, GLint xoffset, GLint yoffset,
                             GLint x, GLint y, GLsizei width, GLsizei height)
 {
     __GLtextureICD *tex;
@@ -1057,3 +1057,11 @@ const __GLtextureFormatSI __glTexFormatColorIndex16 = {
     NULL,			/* storeRect */
     NULL,			/* fetchRect */
 };
+
+/* glCopyTexSubImage2D: GL_GENERATE_MIPMAP (OpenGL 1.4) rebuilds the levels after level 0 changed (gl_newer.c) */
+void __stdcall __glim_CopyTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint x, GLint y,
+                                        GLsizei width, GLsizei height)
+{
+    __glim_CopyTexSubImage2D_base(target, level, xoffset, yoffset, x, y, width, height);
+    if (level == 0) __glAutoMipmap(__glCurrentGC(), target);
+}
