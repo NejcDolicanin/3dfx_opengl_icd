@@ -368,6 +368,24 @@ static void page_readback(void)
             check(nearc(px, 255, 255, 255, fbtol()), "round %d: lit quad (%d %d %d)", pass + 1, px[0], px[1], px[2]);
         }
     }
+    {   /* an RGB texture has alpha 1 whatever the pixels carry (a video frame drawn with blending) */
+        GLubyte texel[4 * 4 * 4];
+        GLuint tex;
+        for (i = 0; i < 16; i++) { texel[i * 4] = 0; texel[i * 4 + 1] = 255; texel[i * 4 + 2] = 0; texel[i * 4 + 3] = 0; }
+        glColor3f(1, 0, 0); quad(540, (float)y, 40, 40);
+        glGenTextures(1, &tex); glBindTexture(GL_TEXTURE_2D, tex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexImage2D(GL_TEXTURE_2D, 0, 0x8051 /* GL_RGB8 */, 4, 4, 0, GL_RGBA, GL_UNSIGNED_BYTE, texel);
+        glEnable(GL_TEXTURE_2D); glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+        glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glColor3f(1, 1, 1); quad(540, (float)y, 40, 40);
+        glDisable(GL_BLEND); glDisable(GL_TEXTURE_2D);
+        readpx(560, y + 20, px);
+        check(nearc(px, 0, 255, 0, fbtol()), "GL_RGB8 texture from RGBA pixels with alpha 0, blended: opaque green (%d %d %d)",
+              px[0], px[1], px[2]);
+        glDeleteTextures(1, &tex);
+    }
     glerr();
 }
 
@@ -1453,6 +1471,118 @@ static void page_gl15(void)
     glerr();
 }
 
+/* =====================================================================================================================
+** page 11: a video, the way the Quake 3 engine games play one (Jedi Academy's intro): one 512 x 512 texture, a new
+** image put into it with glTexSubImage2D on some frames, a quad with it over the screen on every frame.
+** Each frame must show the image that was uploaded last.
+*/
+typedef struct {
+    int size;               /* the texture is size x size */
+    GLenum ifmt;            /* internal format */
+    int respecify;          /* 1: glTexImage2D, 0: glTexSubImage2D */
+    int every;              /* an upload on every n-th frame; 0: never (the image of the first upload stays) */
+    int finishAfter;        /* glFinish between the upload and the quad */
+    const char *what;
+} VideoRun;
+static void videoRun(const VideoRun *r, int frames, int *missUp, int *nUp, int *missKeep, int *nKeep, char *trail,
+                     char *hex)
+{
+    static GLubyte *img;
+    static const GLubyte cols[6][3] = { {255,0,0}, {0,255,0}, {0,0,255}, {255,255,0}, {255,0,255}, {0,255,255} };
+    GLuint tex;
+    GLubyte px[4], fr[4];
+    int f, i, c = 0, up, prev, n = r->size * r->size;
+
+    if (img == NULL) img = (GLubyte *)malloc(512 * 512 * 4);
+    *missUp = *nUp = *missKeep = *nKeep = 0;
+    hex[0] = 0;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    for (i = 0; i < n; i++) { img[i * 4] = cols[0][0]; img[i * 4 + 1] = cols[0][1]; img[i * 4 + 2] = cols[0][2]; img[i * 4 + 3] = 255; }
+    glTexImage2D(GL_TEXTURE_2D, 0, r->ifmt, r->size, r->size, 0, GL_RGBA, GL_UNSIGNED_BYTE, img);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+    for (f = 0; f < frames; f++) {
+        up = r->every && (f % r->every) == 0;
+        prev = c;
+        glClearColor(0.15f, 0.15f, 0.2f, 0);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glFinish();                                     /* the engine does this before every video frame */
+        glBindTexture(GL_TEXTURE_2D, tex);
+        if (up) {
+            c = (c + 1) % 6;
+            for (i = 0; i < n; i++) { img[i * 4] = cols[c][0]; img[i * 4 + 1] = cols[c][1]; img[i * 4 + 2] = cols[c][2]; img[i * 4 + 3] = 255; }
+            if (r->respecify)
+                glTexImage2D(GL_TEXTURE_2D, 0, r->ifmt, r->size, r->size, 0, GL_RGBA, GL_UNSIGNED_BYTE, img);
+            else
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, r->size, r->size, GL_RGBA, GL_UNSIGNED_BYTE, img);
+            if (r->finishAfter) glFinish();
+        }
+        glEnable(GL_TEXTURE_2D);
+        glColor3f(1, 1, 1);
+        quad(0, 0, (float)g_w, (float)(g_h - PANEL_H - 8));
+        glDisable(GL_TEXTURE_2D);
+        /* an untextured white marker beside it: is plain drawing still in the frame? */
+        glColor3f(1, 1, 1);
+        quad(0, (float)(g_h - 40), 40, 40);
+        readpx(g_w / 3, (g_h - PANEL_H) / 2, px);
+        readpx(20, g_h - 20, fr);
+        if (up) (*nUp)++; else (*nKeep)++;
+        /* per frame: . right, p the image before this upload, c the clear colour (no quad), k black, ? other;
+        ** : and capitals on a frame with an upload */
+        if (nearc(px, cols[c][0], cols[c][1], cols[c][2], fbtol())) trail[f] = up ? ':' : '.';
+        else {
+            if (up) (*missUp)++; else (*missKeep)++;
+            trail[f] = nearc(px, 38, 38, 51, 14) ? 'c' : nearc(px, 0, 0, 0, 14) ? 'k' :
+                       nearc(px, cols[prev][0], cols[prev][1], cols[prev][2], fbtol()) ? 'p' : '?';
+            if (up) trail[f] -= 32;
+        }
+        trail[f + 1] = 0;
+        if (f < 12)         /* the first frames in full: expected colour index, what was read, the marker (W = white) */
+            sprintf(hex + strlen(hex), " %d%s%02x%02x%02x%c", c, up ? "u" : "-", px[0], px[1], px[2],
+                    nearc(fr, 255, 255, 255, fbtol()) ? 'W' : nearc(fr, 38, 38, 51, 14) ? 'c' : '?');
+        SwapBuffers(g_hdc);
+    }
+    glDeleteTextures(1, &tex);
+    glClearColor(0.15f, 0.15f, 0.2f, 0);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+}
+static void page_video(void)
+{
+    /* from harmless to what fails; the colours are 0 red 1 green 2 blue 3 yellow 4 magenta 5 cyan */
+    static const VideoRun run[] = {
+        { 512, 0x8051 /* GL_RGB8 */, 0, 0, 0, "512, no upload after the first" },
+        {  64, 0x8051, 0, 1, 0, "64 x 64, glTexSubImage2D every frame" },
+        { 256, 0x8051, 0, 1, 0, "256 x 256, glTexSubImage2D every frame" },
+        { 512, 0x8050 /* GL_RGB5 */, 0, 1, 0, "512, 16-bit texture, glTexSubImage2D every frame" },
+        { 512, 0x8051, 0, 4, 0, "512, glTexSubImage2D every 4th frame" },
+        { 512, 0x8051, 0, 1, 1, "512, glTexSubImage2D every frame, glFinish after it" },
+        { 512, 0x8051, 0, 1, 0, "512, glTexSubImage2D every frame" },
+        { 512, 0x8051, 1, 4, 0, "512, glTexImage2D every 4th frame" },
+        { 512, 0x8051, 0, 0, 0, "512, no upload after the first (again)" } };
+    int i, mu, nu, mk, nk;
+    char trail[64], hex[256];
+
+    ortho();
+    glDisable(GL_LIGHTING); glDisable(GL_DEPTH_TEST); glDisable(GL_BLEND);
+    if (!g_checking) return;
+    info("each frame: clear, glFinish, upload (some frames), quad, read, swap");
+    info(". right  p previous image  c clear colour  k black  ? other; : and capitals = frame with an upload");
+    info("__GL_FORCE_HW = %s", getenv("__GL_FORCE_HW") ? getenv("__GL_FORCE_HW") : "(not set)");
+    for (i = 0; i < sizeof(run) / sizeof(run[0]); i++) {
+        videoRun(&run[i], 40, &mu, &nu, &mk, &nk, trail, hex);
+        check(mu == 0 && mk == 0, "%s: wrong on %d of %d upload frames, %d of %d others",
+              run[i].what, mu, nu, mk, nk);
+        info("  %s", trail);
+        if (g_log) { fprintf(g_log, "         first frames (colour, u = upload, read rrggbb, marker):%s\n", hex); fflush(g_log); }
+    }
+    glerr();
+}
+
 /* ---- the pages ---- */
 typedef struct { const char *title; void (*draw)(void); } Page;
 static const Page g_pages[] = {
@@ -1466,6 +1596,7 @@ static const Page g_pages[] = {
     { "OpenGL 1.3",                     page_gl13 },
     { "OpenGL 1.4",                     page_gl14 },
     { "OpenGL 1.5",                     page_gl15 },
+    { "video: a texture re-uploaded per frame", page_video },
 };
 #define NPAGES ((int)(sizeof(g_pages) / sizeof(g_pages[0])))
 static int g_page, g_runChecks = 1;

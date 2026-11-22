@@ -1352,8 +1352,14 @@ const __GLtextureFormatICD *__fastcall hwTexelFormat(__GLcontext *gc, GLenum int
       case GL_RGB12:
       case GL_RGB16:
         if (TEX32(gc)) {
-            *baseFormat = GL_RGBA;
-            return &g_texFmtARGB8888;
+          /* OG ICD behavior that caused intro-video flickers in Jedi Academy at 32bit */
+          /*
+          *baseFormat = GL_RGBA;
+          return &g_texFmtARGB8888;  
+          */
+          /* an RGB texture has alpha 1 whatever the pixels carry (the original kept RGBA here) */
+            *baseFormat = GL_RGB;
+            return &g_texFmtXRGB8888;
         }
         /* fall through: 565 */
       case GL_RGB4:
