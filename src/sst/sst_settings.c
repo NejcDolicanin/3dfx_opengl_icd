@@ -277,6 +277,11 @@ void __fastcall hwBuildGetStrings(__GLcontext *gc)
         }
         if (g_glVersion >= 15)
             q += sprintf(q, "GL_ARB_vertex_buffer_object ");
+        /* test switch FX_GL_FAKE_EXTENSIONS=1: also name what 1.3 only accepts without drawing it (gl_newer.c), for
+        ** games that refuse to start without the names */
+        s = hwRegOrEnvString("FX_GL_FAKE_EXTENSIONS");
+        if (g_glVersion >= 13 && s != NULL && *s == '1')
+            q += sprintf(q, "GL_ARB_texture_env_combine GL_ARB_texture_cube_map GL_ARB_texture_env_dot3 ");
         if (gc->hwcx.hasAlphaBlendExt)
             q += sprintf(q, "GL_EXT_blend_subtract GL_NV_blend_square ");
         q += sprintf(q, "GL_EXT_clip_volume_hint GL_EXT_compiled_vertex_array GL_EXT_packed_pixels "
