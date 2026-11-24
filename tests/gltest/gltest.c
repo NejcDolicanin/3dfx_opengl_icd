@@ -1585,6 +1585,119 @@ static void page_video(void)
 
 /* ---- the pages ---- */
 typedef struct { const char *title; void (*draw)(void); } Page;
+/* =====================================================================================================================
+** page 12: depth read-back (glReadPixels GL_DEPTH_COMPONENT), the way a game tests whether a lens flare is hidden:
+** one pixel, as a float, at the start of the next frame.  Quads at known depths; each read must give that depth.
+*/
+static float readz(int x, int y)
+{
+    float z = -1.0f;
+    glFinish();
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(x, y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, &z);
+    return z;
+}
+/* a quad whose window depth is wz with glDepthRange 0..1 under ortho() (z -100..100) */
+static void zquad(float x, float y, float w, float h, float wz)
+{
+    float z = 100.0f - 200.0f * wz;
+    glBegin(GL_QUADS);
+    glVertex3f(x, y, z); glVertex3f(x + w, y, z); glVertex3f(x + w, y + h, z); glVertex3f(x, y + h, z);
+    glEnd();
+}
+static int zcheck(float got, float want, const char *what)
+{
+    float tol = g_bpp <= 16 ? 0.004f : 0.002f;
+    return check(got > want - tol && got < want + tol, "%s: %.4f (want %.4f)", what, got, want);
+}
+static void page_depthread(void)
+{
+    int x0 = 40, top = g_h - 60, bot = 20, i;
+    float z;
+
+    ortho();
+    glDisable(GL_LIGHTING); glDisable(GL_BLEND); glDisable(GL_TEXTURE_2D);
+    glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LEQUAL); glDepthMask(GL_TRUE); glDepthRange(0, 1);
+    glClearDepth(1.0);
+    if (g_checking) {
+        /* on its own: a driver may keep the depth buffer in another form until an application first reads it
+        ** (the 3dfx z-precision mode); the checks after it start from a fresh clear */
+        static int first = 1;
+        glClear(GL_DEPTH_BUFFER_BIT); zquad((float)x0, (float)top, 40, 40, 0.25f);
+        zcheck(readz(x0 + 20, top + 20), 0.25f, first ? "the first depth read of the run" : "first read of a repeat");
+        first = 0;
+    }
+    glClear(GL_DEPTH_BUFFER_BIT);
+    glColor3f(0.2f, 0.6f, 1.0f); zquad((float)x0, (float)top, 40, 40, 0.25f);          /* top left */
+    glColor3f(1.0f, 0.6f, 0.2f); zquad((float)(g_w - 80), (float)bot, 40, 40, 0.75f);  /* bottom right */
+    glColor3f(0.2f, 1.0f, 0.4f); zquad(200, 300, 40, 4, 0.5f);                         /* a strip 4 pixels high */
+    if (g_checking) {
+        info("depth buffer: %d bits", (glGetIntegerv(GL_DEPTH_BITS, &i), i));
+        zcheck(readz(x0 + 20, top + 20), 0.25f, "quad at 0.25, top left");
+        zcheck(readz(g_w - 60, bot + 20), 0.75f, "quad at 0.75, bottom right");
+        zcheck(readz(g_w / 2, g_h / 2 + 150), 1.0f, "cleared pixel");
+        /* the same places mirrored top / bottom must be clear: a read that forgets to flip y finds the quads there */
+        zcheck(readz(x0 + 20, g_h - 1 - (top + 20)), 1.0f, "mirror of the top-left quad is clear");
+        zcheck(readz(g_w - 60, g_h - 1 - (bot + 20)), 1.0f, "mirror of the bottom-right quad is clear");
+        zcheck(readz(220, 299), 1.0f, "row below the strip");
+        zcheck(readz(220, 300), 0.5f, "first row of the strip");
+        zcheck(readz(220, 303), 0.5f, "last row of the strip");
+        zcheck(readz(220, 304), 1.0f, "row above the strip");
+        zcheck(readz(199, 301), 1.0f, "pixel left of the strip");
+        zcheck(readz(200, 301), 0.5f, "first pixel of the strip");
+        zcheck(readz(239, 301), 0.5f, "last pixel of the strip");
+        zcheck(readz(240, 301), 1.0f, "pixel right of the strip");
+        {   /* a block read: 8 x 8 across the strip's lower edge (rows 296..303) */
+            float blk[64]; int bad = 0, r, c;
+            glFinish(); glReadPixels(210, 296, 8, 8, GL_DEPTH_COMPONENT, GL_FLOAT, blk);
+            for (r = 0; r < 8; r++) for (c = 0; c < 8; c++) {
+                float want = r >= 4 ? 0.5f : 1.0f, d = blk[r * 8 + c] - want;
+                if (d > 0.004f || d < -0.004f) bad++;
+            }
+            check(bad == 0, "8 x 8 block read across the strip's edge: %d of 64 wrong", bad);
+        }
+        /* depth ranges as the game sets them: world in 0 .. 0.9, the far layer in 0.9 .. 1 */
+        glDepthRange(0.0, 0.9); zquad(300, 300, 40, 40, 0.5f);
+        zcheck(readz(320, 320), 0.45f, "glDepthRange 0..0.9, quad at half");
+        glDepthRange(0.9, 1.0); zquad(360, 300, 40, 40, 0.5f);
+        zcheck(readz(380, 320), 0.95f, "glDepthRange 0.9..1, quad at half");
+        glDepthRange(0, 1);
+        /* depths close together near the far end, where a flare and the wall in front of it are */
+        zquad(420, 300, 20, 40, 0.8900f); zquad(440, 300, 20, 40, 0.8950f);
+        z = readz(430, 320);
+        check(readz(450, 320) > z, "0.8950 reads farther than 0.8900 (%.5f, %.5f)", readz(450, 320), z);
+        /* a nearer quad over a farther one, and a farther one that must fail the test */
+        zquad(480, 300, 40, 40, 0.6f); zquad(480, 300, 40, 40, 0.3f); zquad(480, 300, 40, 40, 0.8f);
+        zcheck(readz(500, 320), 0.3f, "nearest of three quads");
+        /* no depth writes: the value stays */
+        glDepthMask(GL_FALSE); zquad(480, 300, 40, 40, 0.1f); glDepthMask(GL_TRUE);
+        zcheck(readz(500, 320), 0.3f, "glDepthMask off leaves the depth");
+        /* the game reads after the swap, at the start of the next frame */
+        SwapBuffers(g_hdc);
+        zcheck(readz(x0 + 20, top + 20), 0.25f, "after SwapBuffers: quad at 0.25");
+        zcheck(readz(g_w - 60, bot + 20), 0.75f, "after SwapBuffers: quad at 0.75");
+        zcheck(readz(220, 301), 0.5f, "after SwapBuffers: strip");
+        /* a viewport that does not start at the bottom (the game letterboxes); positions stay window positions */
+        glViewport(0, 96, g_w, g_h - 192);
+        glMatrixMode(GL_PROJECTION); glLoadIdentity(); glOrtho(0, g_w, 0, g_h - 192, -100, 100); glMatrixMode(GL_MODELVIEW);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        zquad(100, 10, 40, 40, 0.4f);
+        zcheck(readz(120, 96 + 30), 0.4f, "viewport at y 96: quad at 0.4");
+        zcheck(readz(120, 30), 1.0f, "viewport at y 96: below the viewport is clear");
+        glViewport(0, 0, g_w, g_h); ortho();
+        /* the unsigned short and unsigned int forms of the same read */
+        glClear(GL_DEPTH_BUFFER_BIT); zquad(100, 100, 40, 40, 0.5f);
+        { GLushort us = 0; GLuint ui = 0;
+          glFinish(); glReadPixels(120, 120, 1, 1, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, &us);
+          glReadPixels(120, 120, 1, 1, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, &ui);
+          zcheck(us / 65535.0f, 0.5f, "read as GL_UNSIGNED_SHORT");
+          zcheck((float)(ui / 4294967295.0), 0.5f, "read as GL_UNSIGNED_INT"); }
+        check(*glerr() == 0, "no GL error on the page");
+    }
+    glDisable(GL_DEPTH_TEST);
+    glClear(GL_DEPTH_BUFFER_BIT);
+}
+
 static const Page g_pages[] = {
     { "driver",                         page_info },
     { "reading pixels back",            page_readback },
@@ -1597,6 +1710,7 @@ static const Page g_pages[] = {
     { "OpenGL 1.4",                     page_gl14 },
     { "OpenGL 1.5",                     page_gl15 },
     { "video: a texture re-uploaded per frame", page_video },
+    { "depth read-back",                page_depthread },
 };
 #define NPAGES ((int)(sizeof(g_pages) / sizeof(g_pages[0])))
 static int g_page, g_runChecks = 1;

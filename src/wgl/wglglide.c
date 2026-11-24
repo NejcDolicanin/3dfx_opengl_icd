@@ -647,6 +647,7 @@ void __fastcall wglGlideInitLFBDepth(__WGLbuffer *buf, __WGLdrawable *dp, GLint 
     buf->width = dp->width; buf->height = dp->height;
     buf->base = NULL; buf->handle = NULL; buf->size = 0; buf->byteWidth = 0;
     buf->elementSize = ((depth - 1) / 8) + 1;
+    if (buf->elementSize == 3) buf->elementSize = 4;       /* 24-bit depth shares a 32-bit word with the stencil */
     buf->elementSizeLog2 = wglLog2(buf->elementSize);
     buf->resize = lfbDepthResize; buf->lock = lfbDepthLock; buf->unlock = lfbDepthUnlock; buf->fill = NULL; buf->free = lfbDepthFree;
     buf->mainInit = NULL; buf->fallbackInit = NULL;
