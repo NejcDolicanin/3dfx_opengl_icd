@@ -16,13 +16,13 @@ BEGIN
         BLOCK "040904b0"
         BEGIN
             VALUE "CompanyName", "3dfx Interactive, Inc.\0"
-            VALUE "FileDescription", "OpenGL 1.4 Client Driver\0"
+            VALUE "FileDescription", "OpenGL 1.2 Client Driver\0"
             VALUE "FileVersion", "1.0.0.0762 RE-ICD\0"
             VALUE "InternalName", "OpenGL\0"
             VALUE "LegalCopyright", "Copyright \251 1999 3dfx Interactive, Inc.\0"
             VALUE "LegalTrademarks", "OpenGL \256 is a registered trademark of Silicon Graphics, Inc.\0"
             VALUE "OriginalFilename", "3dfxogl.dll\0"
-            VALUE "ProductName", "OpenGL 1.4 Client Driver\0"
+            VALUE "ProductName", "OpenGL 1.2 Client Driver\0"
             VALUE "ProductVersion", "1.0.0.0762 RE-ICD\0"
         END
     END

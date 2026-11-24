@@ -251,7 +251,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved)
 {
     (void)reserved;
     ICD_T("DllMain reason", reason);
-    if (reason == DLL_PROCESS_ATTACH) ICD_T("3dfxogl.dll 1.0.0.0761 RE-ICD, trace build", 0);
+    if (reason == DLL_PROCESS_ATTACH) ICD_T("3dfxogl.dll 1.0.0.0762 RE-ICD, trace build", 0);
     switch (reason) {
     case DLL_PROCESS_ATTACH:
 #ifdef ICD_MARK

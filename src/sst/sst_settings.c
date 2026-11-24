@@ -250,9 +250,9 @@ void __fastcall hwBuildGetStrings(__GLcontext *gc)
         if (gc->constants.cpuCaps & 4)
             p += sprintf(p, "/KNI");
         if (gc->modes.layerPlane)
-            sprintf(p, "/stand-alone (Nov 21 2000)");
+            sprintf(p, "/stand-alone (Nov 24 2026)");
         else
-            sprintf(p, "/ICD (Nov 21 2000)");
+            sprintf(p, "/ICD (Nov 24 2026)");
 
         q = (char *)gc->hwcx.raw_35bc4;
         w = gc->hwcx.extString;
